@@ -294,9 +294,9 @@ extern time_t myTime(time_t *);
 #define USE_CERT_BUFFERS_2048
 #endif
 
-    /* ------------------------------------------------------------------------- */
-    /* Debugging */
-    /* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* Debugging */
+/* ------------------------------------------------------------------------- */
 
 #undef DEBUG_WOLFSSL
 #undef NO_ERROR_STRINGS
@@ -436,9 +436,9 @@ extern int my_rng_gen_block(unsigned char *output, unsigned int sz);
 #define XSNPRINTF snprintf
 #endif
 
-    /* ------------------------------------------------------------------------- */
-    /* Enable Features */
-    /* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* Enable Features */
+/* ------------------------------------------------------------------------- */
 
 #define WOLFSSL_TLS13
 #define WOLFSSL_OLD_PRIME_CHECK /* Use faster DH prime checking */
@@ -466,7 +466,7 @@ extern int my_rng_gen_block(unsigned char *output, unsigned int sz);
 // #define NO_CRYPT_BENCHMARK
 // #define WOLFCRYPT_ONLY
 
-/* do not warm when file is included to be built and not required to be */
+/* do not warn when file is included to be built and not required to be */
 //define WOLFSSL_IGNORE_FILE_WARN
 
     /* In-lining of misc.c functions */
