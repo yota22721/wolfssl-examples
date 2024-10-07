@@ -49,6 +49,18 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
     *ppxTimerTaskStackBuffer = uxTimerTaskStack;
     *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
 }
+void vApplicationGetPassiveIdleTaskMemory( StaticTask_t ** ppxIdleTaskTCBBuffer,
+                                                   StackType_t ** ppxIdleTaskStackBuffer,
+                                                   configSTACK_DEPTH_TYPE * puxIdleTaskStackSize,
+                                                   BaseType_t xPassiveIdleTaskIndex )
+{
+    static StaticTask_t xIdleTaskTCBs[ configNUMBER_OF_CORES - 1 ];
+    static StackType_t uxIdleTaskStacks[ configNUMBER_OF_CORES - 1 ][ configMINIMAL_STACK_SIZE ];
+
+    *ppxIdleTaskTCBBuffer = &( xIdleTaskTCBs[ xPassiveIdleTaskIndex ] );
+    *ppxIdleTaskStackBuffer = &( uxIdleTaskStacks[ xPassiveIdleTaskIndex ][ 0 ] );
+    *puxIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+}
 
 void vApplicationStackOverflowHook(TaskHandle_t xTask,
                                    char *pcTaskName)

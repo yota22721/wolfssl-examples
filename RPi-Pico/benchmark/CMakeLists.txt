@@ -12,7 +12,7 @@ target_link_libraries(benchmark
 )
 
 target_compile_definitions(benchmark PRIVATE
-    WOLFSSL_RPI_PICO
+    USE_GETTIMEOFDAY
 )
 
 pico_enable_stdio_usb(benchmark 1)

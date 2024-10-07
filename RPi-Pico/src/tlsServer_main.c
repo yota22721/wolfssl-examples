@@ -46,8 +46,8 @@
 void tlsServer_test(void *arg)
 {
     (void) arg;
-    int sockfd = SOCKET_INVALID;
-    int connd = SOCKET_INVALID;
+    int sockfd = -1;
+    int connd = -1;
     struct sockaddr_in servAddr;
     struct sockaddr_in clientAddr;
     socklen_t size = sizeof(clientAddr);
@@ -229,9 +229,9 @@ exit:
     /* Cleanup and return */
     if (ssl)
         wolfSSL_free(ssl); /* Free the wolfSSL object              */
-    if (connd != SOCKET_INVALID)
+    if (connd != -1)
         close(connd); /* Close the connection to the client   */
-    if (sockfd != SOCKET_INVALID)
+    if (sockfd != -1)
         close(sockfd); /* Close the socket listening for clients   */
     if (ctx)
         wolfSSL_CTX_free(ctx); /* Free the wolfSSL context object          */
