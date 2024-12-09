@@ -58,7 +58,7 @@ extern time_t myTime(time_t *);
 #define WOLFSSL_WOLFSSH
 #define WOLFSSH_LWIP
 #define LWIP_SOCKET 1
-#define DEBUG_WOLFSSH
+//#define DEBUG_WOLFSSH
 //#undef NO_MAIN_DRIVER
 /* ------------------------------------------------------------------------- */
 /* Math Configuration */

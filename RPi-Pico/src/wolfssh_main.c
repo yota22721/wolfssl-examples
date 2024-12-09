@@ -37,6 +37,7 @@
 #include "task.h"
 #include "wolf/tcp.h"
 #include "wolf/wifi.h"
+#include "wolf/time.h"
 #include "lwip/init.h"
 
 #include <wolfssl/wolfcrypt/hash.h>
@@ -2762,13 +2763,11 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
             WFREE(threadCtx, NULL, 0);
             ES_ERROR("Couldn't allocate SSH data.\n");
         }
-        printf("after wolfssh new\n");
     #ifdef WOLFSSH_STATIC_MEMORY
         wolfSSH_MemoryConnPrintStats(heap);
     #endif
         wolfSSH_SetUserAuthCtx(ssh, &pwMapList);
         wolfSSH_SetKeyingCompletionCbCtx(ssh, (void*)ssh);
-        printf("after setkey\n");
         /* Use the session object for its own highwater callback ctx */
         if (defaultHighwater > 0) {
             wolfSSH_SetHighwaterCtx(ssh, (void*)ssh);
@@ -2805,6 +2804,9 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
     #ifdef WOLFSSL_NUCLEUS
         clientFd = NU_Accept(listenFd, &clientAddr, 0);
     #else
+        HeapStats_t heapStats;
+        vPortGetHeapStats(&heapStats);
+        printf("heap before: %d\n",heapStats.xAvailableHeapSpaceInBytes);
         printf("before accept\n");
         clientFd = accept(listenFd, (struct sockaddr*)&clientAddr,
                                                          &clientAddrSz);
@@ -2896,6 +2898,11 @@ void wolfSSH_Echoserver(void* args)
         wolfSSL_Debugging_ON();
         wolfSSH_Debugging_ON();
     #endif
+    
+    if(time_init() < 0) {
+        printf("ERROR:time_init()\n");
+        return;
+    }
 
 #if !defined(WOLFSSL_NUCLEUS) && !defined(INTEGRITY) && !defined(__INTEGRITY)
     ChangeToWolfSshRoot();
