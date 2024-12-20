@@ -28,6 +28,5 @@
 #define DEFAULT_TCP_RECVMBOX_SIZE 10
 
 #undef MEM_SIZE
-#define MEM_SIZE 4000
-
+#define MEM_SIZE 4000*5
 #endif

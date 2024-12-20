@@ -33,7 +33,7 @@
 /* Memory allocation related definitions. */
 #define configSUPPORT_STATIC_ALLOCATION 1
 #define configSUPPORT_DYNAMIC_ALLOCATION 1
-#define configTOTAL_HEAP_SIZE (50 * 1024)
+#define configTOTAL_HEAP_SIZE (20 * 1024)
 #define configAPPLICATION_ALLOCATED_HEAP 0
 #define configENABLE_HEAP_PROTECTOR 1
 

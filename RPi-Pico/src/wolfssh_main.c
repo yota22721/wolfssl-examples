@@ -2804,13 +2804,8 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
     #ifdef WOLFSSL_NUCLEUS
         clientFd = NU_Accept(listenFd, &clientAddr, 0);
     #else
-        HeapStats_t heapStats;
-        vPortGetHeapStats(&heapStats);
-        printf("heap before: %d\n",heapStats.xAvailableHeapSpaceInBytes);
-        printf("before accept\n");
         clientFd = accept(listenFd, (struct sockaddr*)&clientAddr,
                                                          &clientAddrSz);
-        printf("after accept\n");
     #endif
         if (clientFd == -1) {
             ES_ERROR("tcp accept failed");
