@@ -54,12 +54,16 @@ extern time_t myTime(time_t *);
 /* */
 /*wolfssh*/
 #define NO_WOLFSSL_DIR
+//#undef NO_FILESYSTEM
 #define NO_WOLFSSH_DIR
+#define WOLFSSH_SFTP
+#define WOLFSSH_FATFS
 #define WOLFSSL_WOLFSSH
 #define WOLFSSH_LWIP
 #define LWIP_SOCKET 1
 #undef DEFAULT_WINDOW_SZ
 #define DEFAULT_WINDOW_SZ (32 * 128)
+
 //#define DEBUG_WOLFSSH
 //#undef NO_MAIN_DRIVER
 /* ------------------------------------------------------------------------- */
@@ -486,7 +490,9 @@ extern int my_rng_gen_block(unsigned char *output, unsigned int sz);
     // #define NO_INLINE
 
 #ifdef TARGET_EMBEDDED
+#ifndef WOLFSSH_SFTP
 #define NO_FILESYSTEM
+#endif
 #define NO_WRITEV
 #define NO_MAIN_DRIVER
 #define NO_DEV_RANDOM

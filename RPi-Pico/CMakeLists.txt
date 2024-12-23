@@ -43,6 +43,8 @@ pico_sdk_init()
     include_directories(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/include)
     include_directories(${WOLFSSL_ROOT})
     include_directories(${WOLFSSH_ROOT})
+    include_directories(${FATFS_ROOT})
+
 ###  End of Global Include Path
     
     include(wolfssl_import.cmake)

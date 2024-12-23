@@ -10,7 +10,6 @@ file(GLOB WOLFSSH_SRC
 
 file(GLOB WOLFSSH_EXCLUDE
     "${WOLFSSH_ROOT}/src/wolfsctp.c"
-    "${WOLFSSH_ROOT}/src/wolfsftp.c"
     "${WOLFSSH_ROOT}/src/certman.c"
     "${WOLFSSH_ROOT}/src/misc.c"
     "${WOLFSSL_ROOT}/src/bio.c"
