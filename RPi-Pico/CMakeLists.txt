@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.13)
 # Pico Examples is only for referring ico_sdk_import.cmake and pico_extras_import_optional.cmake
 set(PICO_BOARD pico_w)
 include($ENV{PICO_EXAMPLES_PATH}/pico_sdk_import.cmake)
-include($ENV{PICO_EXAMPLES_PATH}/pico_extras_import_optional.cmake)
+#include($ENV{PICO_EXAMPLES_PATH}/pico_extras_import_optional.cmake)
 include($ENV{FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
 
 set(WOLFSSL_ROOT $ENV{WOLFSSL_ROOT})
@@ -31,6 +31,11 @@ pico_sdk_init()
     include_directories(${PICO_SDK_PATH}/src/rp2_common/pico_platform_compiler/include)
     include_directories(${PICO_SDK_PATH}/src/rp2_common/pico_platform_sections/include)
     include_directories(${PICO_SDK_PATH}/src/rp2_common/pico_platform_panic/include)
+
+    #include_directories(${PICO_SDK_PATH}/src/rp2_common/hardware_sync/include)
+    #include_directories(${PICO_SDK_PATH}/src/rp2_common/hardware_base/include)
+    #include_directories(${PICO_SDK_PATH}/src/host/hardware_sync/include)
+
     include_directories(${PICO_SDK_PATH}/src/rp2040/hardware_regs/include)
     include_directories(${PICO_SDK_PATH}/src/rp2_common/pico_rand/include)
     #include_directories(${PICO_SDK_PATH}/src/host/pico_platform/include)

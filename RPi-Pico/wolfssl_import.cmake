@@ -26,7 +26,7 @@ add_library(wolfssl STATIC
     ${WOLFSSL_SRC}
 )
 
-include_directories(${WOLFSSL_ROOT})
+#include_directories(${WOLFSSL_ROOT})
 
 target_compile_definitions(wolfssl PUBLIC
     WOLFSSL_USER_SETTINGS

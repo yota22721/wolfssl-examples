@@ -50,14 +50,16 @@ extern time_t myTime(time_t *);
  * Set IO callbacks with wolfSSL_CTX_SetIORecv/wolfSSL_CTX_SetIOSend
  */
 #define WOLFSSL_USER_IO
-#define SINGLE_THREADED
+//#define SINGLE_THREADED
+#define FREERTOS
+#define FREERTOS_TCP
 /* */
 /*wolfssh*/
 #define NO_WOLFSSL_DIR
 //#undef NO_FILESYSTEM
 #define NO_WOLFSSH_DIR
-#define WOLFSSH_SFTP
-#define WOLFSSH_FATFS
+//#define WOLFSSH_SFTP
+//#define WOLFSSH_FATFS
 #define WOLFSSL_WOLFSSH
 #define WOLFSSH_LWIP
 #define LWIP_SOCKET 1
