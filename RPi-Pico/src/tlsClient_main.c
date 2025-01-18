@@ -119,8 +119,8 @@ void tlsClient_test(void *arg)
         servAddr.sin_family = AF_INET;       /* using IPv4      */
         servAddr.sin_port = htons(TCP_PORT); /* on DEFAULT_PORT */
 
-        printf("Connecting to the server(%s)\n", TCP_SERVER);
-        if (inet_pton(AF_INET, TCP_SERVER, &servAddr.sin_addr) != 1) {
+        printf("Connecting to the server(%s)\n", TEST_TCP_SERVER_IP);
+        if (inet_pton(AF_INET, TEST_TCP_SERVER_IP, &servAddr.sin_addr) != 1) {
             fprintf(stderr, "ERROR: invalid address\n");
             goto exit;
         }

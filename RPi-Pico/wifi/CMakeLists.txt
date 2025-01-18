@@ -1,7 +1,7 @@
 add_executable(Wifi
-    src/blink.c
-    src/wifi.c
-    src/wifi_main.c
+    ../src/blink.c
+    ../src/wifi.c
+    ../src/wifi_main.c
 )
 
 target_compile_definitions(Wifi PRIVATE
