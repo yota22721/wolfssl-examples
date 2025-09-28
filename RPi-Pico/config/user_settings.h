@@ -52,16 +52,53 @@ extern time_t myTime(time_t *);
 
 #ifdef TARGET_EMBEDDED
 /* disable mutex locking */
-#define SINGLE_THREADED
+//#define SINGLE_THREADED
 
 /* reduce stack use. For variables over 100 bytes allocate from heap */
-#define WOLFSSL_SMALL_STACK
-
+//#define WOLFSSL_SMALL_STACK
+#define WOLFSSL_SP_SMALL_STACK
+#undef WOLFSSL_SP_ARM_THUMB_ASM
 /* Disable the built-in socket support and use the IO callbacks.
  * Set IO callbacks with wolfSSL_CTX_SetIORecv/wolfSSL_CTX_SetIOSend
  */
+//#define SP_INT_MAX_BITS 512
+#undef WOLFSSL_SP_ASM
+#define SP_WORD_SIZE 32
+
 #define WOLFSSL_USER_IO
+#define WOLFSSL_LWIP
 #endif
+
+#define XMALLOC(s, h, type)  pvPortMalloc((s))
+#define XFREE(p, h, type)    vPortFree((p))
+#define XREALLOC(p, n, h, t) pvPortRealloc(p, n)
+#define XMALLOC_OVERRIDE
+//#define FREERTOS_TCP
+#define FREERTOS
+/* */
+/*wolfssh*/
+//#define USE_RAM
+
+//#define USE_FLASH
+//#define NO_WOLFSSH_DIR
+//#define WOLFSSH_SFTP
+//#define WOLFSSH_FATFS
+
+//#define WOLFSSH_SFTP_SETMODE
+//#undef WOLFSSH_USER_FILESYSTEM
+//#define WOLFSSH_SFTP_SETMODEHANDLE
+//#define WOLFSSH_STOREHANDLE
+//#define WOLFSSH_SFTP
+//#define WOLFSSH_FATFS
+
+#define WOLFSSL_WOLFSSH
+#define WOLFSSH_LWIP
+#define LWIP_SOCKET 1
+#undef DEFAULT_WINDOW_SZ
+#define DEFAULT_WINDOW_SZ (32 * 128)
+
+//#define DEBUG_WOLFSSH
+//#undef NO_MAIN_DRIVER
 
 /* ------------------------------------------------------------------------- */
 /* Math Configuration */
@@ -83,7 +120,7 @@ extern time_t myTime(time_t *);
 
 #ifdef TARGET_EMBEDDED
 /* use smaller version of code */
-//#define WOLFSSL_SP_SMALL
+#define WOLFSSL_SP_SMALL
 #else
 /* SP Assembly Speedups - specific to chip type */
 #define WOLFSSL_SP_ASM
@@ -350,9 +387,8 @@ extern time_t myTime(time_t *);
     /* Debugging */
     /* ------------------------------------------------------------------------- */
 
-#undef DEBUG_WOLFSSL
 #undef NO_ERROR_STRINGS
-#if 0
+#if 1
 #define DEBUG_WOLFSSL
 #else
 #if 0
@@ -397,7 +433,7 @@ extern time_t myTime(time_t *);
 #define USE_WOLFSSL_MEMORY
 
     /* Use this to measure / print heap usage */
-#if 0
+#if 1
 #define WOLFSSL_TRACK_MEMORY
 #define WOLFSSL_DEBUG_MEMORY
 #endif

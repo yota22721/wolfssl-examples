@@ -45,11 +45,11 @@
 /* Memory allocation related definitions. */
 #define configSUPPORT_STATIC_ALLOCATION 1
 #define configSUPPORT_DYNAMIC_ALLOCATION 1
-#define configTOTAL_HEAP_SIZE (128 * 1024)
+#define configTOTAL_HEAP_SIZE (256 * 1024)
 #define configAPPLICATION_ALLOCATED_HEAP 0
 
 /* Hook function related definitions. */
-#define configCHECK_FOR_STACK_OVERFLOW 1
+#define configCHECK_FOR_STACK_OVERFLOW 2
 #define configUSE_MALLOC_FAILED_HOOK 0
 #define configUSE_DAEMON_TASK_STARTUP_HOOK 0
 
@@ -72,13 +72,23 @@
 /* SMP port only */
 #define configNUM_CORES 2
 #define configTICK_CORE 0
+#define configNUMBER_OF_CORES                   2
+#define configUSE_PASSIVE_IDLE_HOOK             0
 #define configRUN_MULTIPLE_PRIORITIES 1
 #define configUSE_CORE_AFFINITY 1
 #endif
 
 /* RP2040 specific */
-#define configSUPPORT_PICO_SYNC_INTEROP 1
-#define configSUPPORT_PICO_TIME_INTEROP 1
+//#define configSUPPORT_PICO_SYNC_INTEROP 1
+//#define configSUPPORT_PICO_TIME_INTEROP 1
+
+/* RP2350 specific */
+#define configENABLE_MPU 0
+#define configENABLE_TRUSTZONE 0
+#define configRUN_FREERTOS_SECURE_ONLY 1
+#define configENABLE_FPU 1
+//#define configMAX_SYSCALL_INTERRUPT_PRIORITY 16
+#define configCPU_CLOCK_HZ 150000000
 
 #include <assert.h>
 /* Define to trap errors during development. */
@@ -102,6 +112,18 @@ to exclude the API function. */
 #define INCLUDE_xTaskGetHandle 1
 #define INCLUDE_xTaskResumeFromISR 1
 #define INCLUDE_xQueueGetMutexHolder 1
+
+
+// まず、CMSIS が定義する優先度ビット数を使う
+#ifndef __NVIC_PRIO_BITS
+#define __NVIC_PRIO_BITS 3   // 典型値。念のためビルドログ/headersで確認
+#endif
+// “ライブラリ表記” (非シフト) の定義
+#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY         ((1U << __NVIC_PRIO_BITS) - 1U)  // 例: 7
+#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY    3U   // 推奨: 2〜5の範囲で（小さいほど高優先度）
+// FreeRTOS が使う “シフト済み” の値
+#define configKERNEL_INTERRUPT_PRIORITY                 ( configLIBRARY_LOWEST_INTERRUPT_PRIORITY << (8 - __NVIC_PRIO_BITS) )
+#define configMAX_SYSCALL_INTERRUPT_PRIORITY            ( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - __NVIC_PRIO_BITS) )
 
 /* A header file that defines trace macro can be included here. */
 
