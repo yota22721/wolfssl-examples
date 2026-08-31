@@ -46,6 +46,97 @@ This drops the `-DWOLFSSL_PUF_TEST` define and includes `puf_sram_region`
 (placed in the `.puf_sram` NOLOAD section) so `wc_PufReadSram()` reads
 the real power-on SRAM contents.
 
+**Only a real power cycle gives a real readout.** A warm reset - the reset
+button, a debugger reset, or `-rst` after flashing - leaves SRAM holding
+whatever the previous image left there. That stale content can still pass the
+Hamming-weight health band, so the example will happily enroll from it and
+report a plausible-looking identity that has nothing to do with the silicon.
+Pull power (or unplug USB) between enrollment and reconstruction when you want
+to exercise the PUF itself.
+
+Measured on a NUCLEO-H563ZI: a cold-boot readout is about 51-52% ones, well
+inside the default 35-65% band, and reconstruction recovers the enrolled
+identity unchanged across a physical power cycle - so this part's SRAM noise
+stays within the BCH t=10 correction budget. Immediately after a warm reset the
+same board reported 20% ones and was correctly rejected with `PUF_READ_E`.
+
+### Interactive Mode
+
+The interactive demo has a host-side behavioral test: `host_test/` builds
+`main_interactive.c` against a stdio HAL and `driver.py` drives the menu end
+to end (enrollment, the sweep gate and correction cliff, blob dump and
+recovery, checksum and identity-mismatch rejection, paste abort, and the
+fail-closed unhealthy-readout path). CI runs it on every change; locally:
+`make -C host_test WOLFSSL_ROOT=/path/to/wolfssl run`.
+
+```bash
+make INTERACTIVE=1
+```
+
+Requires wolfSSL master (the demo uses PUF APIs added after v5.9.2; the build
+stops with a clear `#error` on older trees). Output goes to
+`Build-interactive/` so switching modes never reuses stale objects.
+
+Derived keys are never written to the UART by default - the console is an
+unauthenticated physical interface, so the demo prints a "derived OK (not
+shown)" status instead. For lab work where seeing the key bytes matters,
+`make INTERACTIVE=1 SHOW_KEYS=1` opts in explicitly.
+
+If the power-on readout fails the Hamming-weight health band (which is what a
+warm reset looks like, since SRAM keeps the previous image's data), the demo
+fails closed: enrollment, reconstruction, and key derivation are disabled
+until a genuine power cycle provides a real readout. Nothing is ever derived
+from a substitute pattern.
+
+Builds `main_interactive.c` instead of the one-shot example: a UART menu that
+captures the real power-on SRAM at reset, reports whether it passed the readout
+health band, and then lets you drive the extractor a step at a time.
+
+```
+=== wolfCrypt PUF - interactive demo ===
+  profile     : BCH(127,64,t=10) over GF(2^7), 16 codewords, id 0x38500010
+  power-on SRAM readout: 256 bytes, 44% ones -> inside the health band
+
+  [1] enroll and show identity / key / helper
+  [2] noise sweep - the correction cliff
+  [3] two keys from one PUF
+  [4] dump the public recovery blob (identity + helper)
+  [5] paste the blob back after a power cycle, and verify
+  [r] reboot (soft reset - SRAM is NOT re-randomised)
+```
+
+Option 2 is the interesting one: it injects a known number of bit flips per
+codeword and shows exactly where BCH stops correcting.
+
+```
+  flips/codeword   result
+   9               identity matches
+  10               identity matches   <= t, the limit
+  11               rejected (-1012) - fails closed
+```
+
+Controlled error counts are not something real SRAM can provide, so the captured
+power-on pattern is replayed through `wc_PufSetTestData()` with the flips
+applied - the bits are real silicon, only the extra noise is synthetic. That is
+why `INTERACTIVE=1` implies `PUF_TEST=1`.
+
+Options 4 and 5 show what helper data is for, across a real power cycle and with
+no non-volatile storage involved. `4` prints one line holding the device
+identity, the helper data, and a trailing checksum over both. Copy it, power-cycle the
+board, then paste it back with `5`: it verifies the checksum (a mangled
+paste is reported as such and changes nothing), reconstructs from freshly
+re-read silicon, and compares against the identity carried in the blob, so the
+board reports the result itself rather than leaving you to compare hex by eye. Nothing secret
+leaves the part - the helper is public, which is why it can travel out over the
+wire and back in again.
+
+The reader ignores whitespace, needs no trailing newline, and discards its
+accumulation if it sees any non-hex text, so a selection that catches the
+surrounding prose still loads correctly. `q` aborts.
+
+Note that a soft reset does **not** re-randomise SRAM. Only a real power cycle
+produces a fresh power-on readout.
+
 ### Output
 
 Build output is placed in `./Build/`:

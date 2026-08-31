@@ -62,6 +62,30 @@ jobs:
           bash "$GITHUB_WORKSPACE/.github/scripts/git-clone-retry.sh" -q --depth 1 --branch '${{ matrix.wolfssl_ref }}' https://github.com/wolfSSL/wolfssl /tmp/wolfssl
           cd puf
           make WOLFSSL_ROOT=/tmp/wolfssl
+          make WOLFSSL_ROOT=/tmp/wolfssl PUF_TEST=0
+
+      # The interactive demo uses PUF APIs added after v5.9.2, so it only
+      # builds against master (older trees stop at a #error in the source).
+      # PUF_TEST=0 on the same line proves the override forces test mode on.
+      - name: Build puf interactive demo (wolfSSL master only)
+        if: matrix.wolfssl_ref == 'master'
+        run: |
+          set -euo pipefail
+          cd puf
+          make WOLFSSL_ROOT=/tmp/wolfssl INTERACTIVE=1
+          make WOLFSSL_ROOT=/tmp/wolfssl INTERACTIVE=1 PUF_TEST=0
+          make WOLFSSL_ROOT=/tmp/wolfssl INTERACTIVE=1 SHOW_KEYS=1
+
+      # Host build of the interactive demo with a stdio HAL, driven end to
+      # end: enrollment, the sweep gate and correction cliff, blob dump and
+      # recovery, checksum and identity-mismatch rejection, paste abort, and
+      # the fail-closed unhealthy-readout path.
+      - name: Run interactive demo behavioral test (wolfSSL master only)
+        if: matrix.wolfssl_ref == 'master'
+        run: |
+          set -euo pipefail
+          cd puf/host_test
+          make WOLFSSL_ROOT=/tmp/wolfssl run
 
       - name: Assert it really cross-compiled
         run: |

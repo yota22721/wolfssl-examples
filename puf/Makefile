@@ -20,13 +20,30 @@ NM = $(TOOLCHAIN)nm
 # wolfSSL root (relative to this directory)
 WOLFSSL_ROOT ?= ../../wolfssl
 
-# Build output
-BUILD_DIR = ./Build
+# Build output. Each configuration gets its own directory so switching
+# INTERACTIVE / PUF_TEST between invocations can never relink stale objects
+# from the previous configuration (the default build stays in ./Build).
 BIN = puf_example
 
 # PUF test mode (default on): synthetic SRAM data for testing without hardware.
 # Set PUF_TEST=0 to build for real hardware SRAM.
 PUF_TEST ?= 1
+
+# Set INTERACTIVE=1 to build the UART menu demo (main_interactive.c) instead of
+# the one-shot example. It captures the real power-on SRAM and then replays it
+# through wc_PufSetTestData so a known number of bit flips can be injected, so
+# it needs the test hooks compiled in: PUF_TEST is forced on (override beats a
+# contradictory PUF_TEST=0 on the command line). Requires wolfSSL master (the
+# demo uses PUF APIs added after v5.9.2; the build stops with a clear #error
+# on older trees).
+INTERACTIVE ?= 0
+ifeq ($(INTERACTIVE),1)
+override PUF_TEST := 1
+endif
+
+# The interactive demo never writes derived keys to the UART by default (the
+# console is unauthenticated). SHOW_KEYS=1 opts in for lab use.
+SHOW_KEYS ?= 0
 
 # Architecture
 ARCHFLAGS = -mcpu=cortex-m33 -mthumb -mabi=aapcs
@@ -41,6 +58,19 @@ ifeq ($(PUF_TEST),1)
 CFLAGS += -DWOLFSSL_PUF_TEST
 endif
 
+BUILD_SUFFIX =
+ifeq ($(INTERACTIVE),1)
+BUILD_SUFFIX := $(BUILD_SUFFIX)-interactive
+ifeq ($(SHOW_KEYS),1)
+CFLAGS += -DPUF_DEMO_SHOW_KEYS
+BUILD_SUFFIX := $(BUILD_SUFFIX)-showkeys
+endif
+endif
+ifeq ($(PUF_TEST),0)
+BUILD_SUFFIX := $(BUILD_SUFFIX)-hw
+endif
+BUILD_DIR ?= ./Build$(BUILD_SUFFIX)
+
 # Linker flags
 LDFLAGS = $(ARCHFLAGS)
 LDFLAGS += --specs=nosys.specs --specs=nano.specs
@@ -52,7 +82,11 @@ LDFLAGS += -T./linker.ld
 LIBS = -lm
 
 # Source files
+ifeq ($(INTERACTIVE),1)
+SRC_C  = main_interactive.c
+else
 SRC_C  = main.c
+endif
 SRC_C += startup.c
 SRC_C += stm32.c
 
@@ -102,5 +136,5 @@ $(BUILD_DIR)/$(BIN).hex: $(BUILD_DIR)/$(BIN).elf
 	$(OBJCOPY) -O ihex $< $@
 
 clean:
-	rm -f $(BUILD_DIR)/*.elf $(BUILD_DIR)/*.hex $(BUILD_DIR)/*.map
-	rm -f $(BUILD_DIR)/*.o $(BUILD_DIR)/*.sym $(BUILD_DIR)/*.disasm
+	rm -rf ./Build ./Build-interactive ./Build-interactive-showkeys ./Build-hw
+	$(MAKE) -C host_test clean

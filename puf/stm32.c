@@ -59,6 +59,8 @@
 
 /* USART3 registers */
 #define USART3_CR1      (*(volatile uint32_t *)(USART3_BASE + 0x00u))
+#define USART3_RDR      (*(volatile uint32_t *)(USART3_BASE + 0x24u))
+#define USART3_ICR      (*(volatile uint32_t *)(USART3_BASE + 0x20u))
 #define USART3_CR2      (*(volatile uint32_t *)(USART3_BASE + 0x04u))
 #define USART3_CR3      (*(volatile uint32_t *)(USART3_BASE + 0x08u))
 #define USART3_BRR      (*(volatile uint32_t *)(USART3_BASE + 0x0Cu))
@@ -100,7 +102,19 @@ static void uart_init(void)
     GPIO_OSPEEDR(GPIOD_BASE) |= (3u << 16);  /* High speed for PD8 */
     afr = GPIO_AFRH(GPIOD_BASE);
     afr &= ~(0xFu << 0);
-    afr |= (7u << 0);      /* AF7 = USART3 */
+    afr |= (7u << 0);      /* AF7 = USART3 TX on PD8 */
+    GPIO_AFRH(GPIOD_BASE) = afr;
+
+    /* Configure PD9 (RX) as AF7 as well. Needed for the interactive menu;
+     * the original one-shot example was transmit-only. MODER pin 9 is bits
+     * [19:18]; AFRH pin 9 is bits [7:4]. */
+    moder = GPIO_MODER(GPIOD_BASE);
+    moder &= ~(3u << 18);
+    moder |= (2u << 18);
+    GPIO_MODER(GPIOD_BASE) = moder;
+    afr = GPIO_AFRH(GPIOD_BASE);
+    afr &= ~(0xFu << 4);
+    afr |= (7u << 4);
     GPIO_AFRH(GPIOD_BASE) = afr;
 
     /* Configure USART3 for UART_BAUD_HZ at the post-reset PCLK1 (see
@@ -110,7 +124,7 @@ static void uart_init(void)
     USART3_CR3 = 0;
     USART3_PRESC = 0;
     USART3_BRR = UART_PCLK_HZ / UART_BAUD_HZ;
-    USART3_CR1 = (1u << 3);  /* TE */
+    USART3_CR1 = (1u << 3) | (1u << 2);  /* TE | RE */
     delay(10);
     USART3_CR1 |= (1u << 0);  /* UE */
     delay(100);
@@ -265,4 +279,29 @@ unsigned long my_time(unsigned long* timer)
     if (timer)
         *timer = t;
     return t++;
+}
+
+/* Blocking single-character read, used by the interactive demo menu. */
+int uart_getc(void)
+{
+    /* ISR bit 5 = RXNE (receive register not empty), bit 3 = ORE (overrun).
+     * A pasted block arrives back-to-back with no flow control, so clear ORE
+     * (ICR bit 3) rather than let it wedge the receiver. */
+    for (;;) {
+        if ((USART3_ISR & (1u << 3)) != 0u)
+            USART3_ICR = (1u << 3);
+        if ((USART3_ISR & (1u << 5)) != 0u)
+            break;
+    }
+    return (int)(USART3_RDR & 0xFFu);
+}
+
+/* Discard anything latched in the receiver (line noise at reset). */
+void uart_drain(void)
+{
+    volatile uint32_t sink;
+    while ((USART3_ISR & (1u << 5)) != 0u) {
+        sink = USART3_RDR;
+        (void)sink;
+    }
 }

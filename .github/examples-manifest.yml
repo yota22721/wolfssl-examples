@@ -1359,6 +1359,14 @@ examples:
     mode: skip
     reason: "shared helper (btle-sim.c) linked by btle/ecies and btle/tls; not an example"
 
+  - id: puf-host-test
+    path: puf/host_test
+    mode: skip
+    reason: >-
+      Host behavioral test harness for puf's interactive demo, not an example:
+      puf.yml builds it and runs driver.py against wolfSSL master (the demo
+      needs post-v5.9.2 PUF APIs, so the stable ref is excluded there)
+
   - id: hsm-dtls-client
     path: hsm/dtls_client
     mode: skip
