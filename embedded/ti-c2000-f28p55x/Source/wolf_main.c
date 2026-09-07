@@ -55,6 +55,15 @@
 #ifdef WOLF_AES
 #include <wolfssl/wolfcrypt/aes.h>
 #endif
+#ifdef WOLF_HWAES
+#include <wolfssl/wolfcrypt/port/ti/ti-c2000.h>
+#endif
+#ifdef WOLF_ENTROPY
+#include <wolfssl/wolfcrypt/port/ti/ti-c2000-entropy.h>
+#endif
+#ifdef WOLF_ENTROPY_PROBE
+#include "entropy_probe.h"
+#endif
 #ifdef WOLF_25519
 #include <wolfssl/wolfcrypt/curve25519.h>
 #include <wolfssl/wolfcrypt/ed25519.h>
@@ -94,7 +103,19 @@
 #endif
 #include <wolfcrypt/test/test.h>
 #include <wolfcrypt/benchmark/benchmark.h>
+#if defined(WOLF_MLDSA_OCTETS) || defined(WOLF_SECUREBOOT)
+/* The octet-boundary image carries its own seed-derived vectors for all three
+ * parameter sets (it needs the matching private key to produce the pre-hash
+ * signatures), and reuses the same kat_mldsa87_* names.  The canonical FIPS 204
+ * ML-DSA-87 vectors from wolfcrypt/test/test.c stay in the default image. */
+#include <wolfssl/wolfcrypt/hash.h>
+#include "mldsa_octet_kat.h"
+#ifdef WOLFSSL_MLDSA_VERIFY_PRECOMP_A
+#include "mldsa87_precomp_a.h"
+#endif
+#else
 #include "mldsa87_kat.h"
+#endif
 #ifdef WOLF_ECC
 #include "ecc_p256_kat.h"
 #endif
@@ -863,14 +884,17 @@ static void wolf_sha1_test(void)
 }
 #endif /* WOLF_SHA1 */
 
-#ifndef WOLF_MLDSA_SIGN
+#if !defined(WOLF_MLDSA_SIGN) && !defined(WOLF_MLDSA_OCTETS) && \
+    !defined(WOLF_SECUREBOOT)
 /* ML-DSA-87 verify known-answer test (real pk/msg/sig from test.c).  This
  * is the primary deliverable: a deterministic, RNG-free verify on HW.
  * Key struct is static (large; WOLFSSL_MLDSA_VERIFY_NO_MALLOC pins buffers
  * into it). msg matches test.c's mldsa_param_vfy_test: msg[i] = (byte)i.
  * Skipped in the SIGN build: its static verify key would not fit alongside
  * the sign key + 32 KW heap, and the sign round-trip below also exercises
- * verify (of a freshly produced signature). */
+ * verify (of a freshly produced signature).  Skipped in the SECUREBOOT build
+ * too: that image calls wolf_secureboot_test() instead, so the guard here has
+ * to match the call site or this is compiled and never used. */
 static void wolf_mldsa87_verify_test(void)
 {
     /* mldsa_key is static (.bss): WOLFSSL_MLDSA_VERIFY_NO_MALLOC pins the
@@ -949,7 +973,404 @@ static void wolf_mldsa87_verify_test(void)
 #endif
     wc_MlDsaKey_Free(&mldsa_key);
 }
-#endif /* !WOLF_MLDSA_SIGN */
+#endif /* !WOLF_MLDSA_SIGN && !WOLF_MLDSA_OCTETS */
+
+#ifdef WOLF_MLDSA_OCTETS
+/* ------------------------------------------------------------------------- */
+/* ML-DSA octet-boundary tests (make MLDSA=1)                                */
+/* ------------------------------------------------------------------------- */
+/* Proves three things on 16-bit-byte silicon: verify is correct at all three
+ * parameter sets (level 44 matters most - its w1 encoder packs 6-bit values, so
+ * it is the only one that can push a cell above 255); the HashML-DSA path
+ * wc_MlDsaKey_VerifyCtxHash() works with a non-empty context; and a key and
+ * signature that arrive PACKED verify once wc_UnpackOctets() expands them.
+ * One key struct is shared - WOLFSSL_MLDSA_VERIFY_NO_MALLOC pins the verify
+ * workspace inside it, far too big for the 16 KW C28x stack. */
+/* Static: an ML-DSA-65 signature is 3309 octets = 3309 cells = 6618 bytes. */
+static byte     mo_pub[WC_MLDSA_65_PUB_KEY_SIZE];
+static byte     mo_sig[WC_MLDSA_65_SIG_SIZE];
+static wc_MlDsaKey mo_key;
+static byte     mo_msg[512];
+
+/* hashAlg < 0 selects plain verify over the message; otherwise pre-hash. */
+static void mo_verify(const char* what, int type, const byte* pub,
+    word32 pubLen, const byte* sig, word32 sigLen, int hashAlg,
+    const byte* hash, word32 hashLen)
+{
+    int res = 0;
+    int ret;
+
+    ret = wc_MlDsaKey_Init(&mo_key, NULL, INVALID_DEVID);
+    if (ret == 0) {
+        ret = wc_MlDsaKey_SetParams(&mo_key, type);
+    }
+    if (ret == 0) {
+        ret = wc_MlDsaKey_ImportPubRaw(&mo_key, pub, pubLen);
+    }
+    if (ret == 0) {
+        if (hashAlg < 0) {
+            ret = wc_MlDsaKey_VerifyCtx(&mo_key, sig, sigLen, NULL, 0, mo_msg,
+                (word32)sizeof(mo_msg), &res);
+        }
+        else {
+            ret = wc_MlDsaKey_VerifyCtxHash(&mo_key, sig, sigLen,
+                (const byte*)KAT_MLDSA_CTX,
+                (byte)(sizeof(KAT_MLDSA_CTX) - 1), hash, hashLen, hashAlg,
+                &res);
+        }
+    }
+    printf("%s %s (ret=%d res=%d)\r\n", what,
+           ((ret == 0) && (res == 1)) ? "PASS" : "FAIL", ret, res);
+    wc_MlDsaKey_Free(&mo_key);
+}
+
+/* Helpers on their own, odd length so the partial trailing cell is covered. */
+static void mo_pack_roundtrip(void)
+{
+    byte src[65];
+    byte packed[65];
+    byte back[65];
+    int  i;
+    int  ret;
+    int  ok;
+
+    for (i = 0; i < (int)sizeof(src); i++) {
+        src[i] = (byte)((i * 7 + 1) & 0xFF);
+    }
+    ret = wc_PackOctets(packed, (word32)sizeof(packed), src,
+        (word32)sizeof(src), (word32)sizeof(src));
+    if (ret == 0) {
+        ret = wc_UnpackOctets(back, (word32)sizeof(back), packed,
+            (word32)sizeof(packed), (word32)sizeof(src));
+    }
+    /* Round-trip alone would also pass for an identity implementation, so
+     * check the packed layout itself: cell 0 must carry the first
+     * WC_OCTETS_PER_BYTE octets, low octet first. */
+    ok = (ret == 0) && (XMEMCMP(src, back, sizeof(src)) == 0);
+    if (ok) {
+        word32 expect = 0;
+        word32 e;
+        for (e = 0; e < WC_OCTETS_PER_BYTE; e++) {
+            expect |= (word32)src[e] << (8 * e);
+        }
+        ok = ((word32)packed[0] == expect);
+    }
+    printf("wc_Pack/UnpackOctets round-trip: %s (ret=%d)\r\n",
+           ok ? "PASS" : "FAIL", ret);
+}
+
+/* Key and signature stored PACKED, expanded before use. */
+static void mo_packed_verify(void)
+{
+    int res = 0;
+    int ret;
+
+    ret = wc_UnpackOctets(mo_pub, (word32)sizeof(mo_pub),
+        (const byte*)kat_mldsa65_pub_packed,
+        (word32)(sizeof(kat_mldsa65_pub_packed) /
+                 sizeof(kat_mldsa65_pub_packed[0])),
+        (word32)sizeof(mo_pub));
+    if (ret == 0) {
+        ret = wc_UnpackOctets(mo_sig, (word32)sizeof(mo_sig),
+            (const byte*)kat_mldsa65_sig_packed,
+            (word32)(sizeof(kat_mldsa65_sig_packed) /
+                     sizeof(kat_mldsa65_sig_packed[0])),
+            (word32)sizeof(mo_sig));
+    }
+    /* Expanded buffers must match the plain arrays octet for octet. */
+    if (ret == 0) {
+        if ((XMEMCMP(mo_pub, kat_mldsa65_pub, sizeof(mo_pub)) != 0) ||
+            (XMEMCMP(mo_sig, kat_mldsa65_sig, sizeof(mo_sig)) != 0)) {
+            ret = -1;
+        }
+    }
+    if (ret == 0) {
+        ret = wc_MlDsaKey_Init(&mo_key, NULL, INVALID_DEVID);
+    }
+    if (ret == 0) {
+        ret = wc_MlDsaKey_SetParams(&mo_key, WC_ML_DSA_65);
+    }
+    if (ret == 0) {
+        ret = wc_MlDsaKey_ImportPubRaw(&mo_key, mo_pub, (word32)sizeof(mo_pub));
+    }
+    if (ret == 0) {
+        ret = wc_MlDsaKey_VerifyCtx(&mo_key, mo_sig, (word32)sizeof(mo_sig),
+            NULL, 0, mo_msg, (word32)sizeof(mo_msg), &res);
+    }
+    printf("ML-DSA-65 packed-signature verify: %s (ret=%d res=%d)\r\n",
+           ((ret == 0) && (res == 1)) ? "PASS" : "FAIL", ret, res);
+    wc_MlDsaKey_Free(&mo_key);
+}
+
+static void wolf_mldsa_octet_test(void)
+{
+    byte sha256[WC_SHA256_DIGEST_SIZE];
+    byte sha512[WC_SHA512_DIGEST_SIZE];
+    int  i;
+    int  ret;
+
+    /* msg[i] = i & 0xFF.  The mask is not cosmetic here: a C28x cell would
+     * otherwise store 256..511 verbatim and corrupt the hash input. */
+    for (i = 0; i < (int)sizeof(mo_msg); i++) {
+        mo_msg[i] = (byte)(i & 0xFF);
+    }
+    ret = wc_Sha256Hash(mo_msg, (word32)sizeof(mo_msg), sha256);
+    if (ret == 0) {
+        ret = wc_Sha512Hash(mo_msg, (word32)sizeof(mo_msg), sha512);
+    }
+    if (ret != 0) {
+        printf("ML-DSA octet tests: SKIP (digest failed ret=%d)\r\n", ret);
+        return;
+    }
+
+    printf("octet model: CHAR_BIT=%d, one octet per byte cell, %lu octet(s) "
+           "per cell when packed; ML-DSA-65 sig = %lu octets = %lu cells = "
+           "%lu bytes of RAM\r\n",
+           (int)CHAR_BIT, (unsigned long)WC_OCTETS_PER_BYTE,
+           (unsigned long)WC_MLDSA_65_SIG_SIZE,
+           (unsigned long)WC_MLDSA_65_SIG_SIZE,
+           (unsigned long)WC_MLDSA_65_SIG_SIZE * (CHAR_BIT / 8));
+
+    mo_pack_roundtrip();
+
+    mo_verify("ML-DSA-44 verify KAT:", WC_ML_DSA_44, kat_mldsa44_pub,
+        (word32)sizeof(kat_mldsa44_pub), kat_mldsa44_sig,
+        (word32)sizeof(kat_mldsa44_sig), -1, NULL, 0);
+    mo_verify("ML-DSA-65 verify KAT:", WC_ML_DSA_65, kat_mldsa65_pub,
+        (word32)sizeof(kat_mldsa65_pub), kat_mldsa65_sig,
+        (word32)sizeof(kat_mldsa65_sig), -1, NULL, 0);
+    mo_verify("ML-DSA-87 verify KAT:", WC_ML_DSA_87, kat_mldsa87_pub,
+        (word32)sizeof(kat_mldsa87_pub), kat_mldsa87_sig,
+        (word32)sizeof(kat_mldsa87_sig), -1, NULL, 0);
+
+    mo_verify("ML-DSA-44 VerifyCtxHash SHA-256 KAT:", WC_ML_DSA_44,
+        kat_mldsa44_pub, (word32)sizeof(kat_mldsa44_pub),
+        kat_mldsa44_sig_ph256, (word32)sizeof(kat_mldsa44_sig_ph256),
+        WC_HASH_TYPE_SHA256, sha256, (word32)sizeof(sha256));
+    mo_verify("ML-DSA-65 VerifyCtxHash SHA-256 KAT:", WC_ML_DSA_65,
+        kat_mldsa65_pub, (word32)sizeof(kat_mldsa65_pub),
+        kat_mldsa65_sig_ph256, (word32)sizeof(kat_mldsa65_sig_ph256),
+        WC_HASH_TYPE_SHA256, sha256, (word32)sizeof(sha256));
+    mo_verify("ML-DSA-87 VerifyCtxHash SHA-256 KAT:", WC_ML_DSA_87,
+        kat_mldsa87_pub, (word32)sizeof(kat_mldsa87_pub),
+        kat_mldsa87_sig_ph256, (word32)sizeof(kat_mldsa87_sig_ph256),
+        WC_HASH_TYPE_SHA256, sha256, (word32)sizeof(sha256));
+    mo_verify("ML-DSA-87 VerifyCtxHash SHA-512 KAT:", WC_ML_DSA_87,
+        kat_mldsa87_pub, (word32)sizeof(kat_mldsa87_pub),
+        kat_mldsa87_sig_ph512, (word32)sizeof(kat_mldsa87_sig_ph512),
+        WC_HASH_TYPE_SHA512, sha512, (word32)sizeof(sha512));
+
+    /* Negative case: every check above is positive, so a verify that returned
+     * success unconditionally - or a w1 encoder that collapsed distinct
+     * commitments - would pass them all.  Flip one octet of the level-44
+     * signature and require a clean rejection. */
+    {
+        static byte bad[WC_MLDSA_44_SIG_SIZE];
+        int bres = 1;
+        int bret;
+
+        XMEMCPY(bad, kat_mldsa44_sig, sizeof(bad));
+        bad[sizeof(bad) / 2] ^= 0x01;
+
+        bret = wc_MlDsaKey_Init(&mo_key, NULL, INVALID_DEVID);
+        if (bret == 0) {
+            bret = wc_MlDsaKey_SetParams(&mo_key, WC_ML_DSA_44);
+        }
+        if (bret == 0) {
+            bret = wc_MlDsaKey_ImportPubRaw(&mo_key, kat_mldsa44_pub,
+                (word32)sizeof(kat_mldsa44_pub));
+        }
+        if (bret == 0) {
+            bret = wc_MlDsaKey_VerifyCtx(&mo_key, bad, (word32)sizeof(bad),
+                NULL, 0, mo_msg, (word32)sizeof(mo_msg), &bres);
+        }
+        /* A corrupt signature must be rejected, not error out. */
+        printf("ML-DSA-44 corrupted-signature reject: %s (ret=%d res=%d)\r\n",
+               ((bret == 0) && (bres == 0)) ? "PASS" : "FAIL", bret, bres);
+        wc_MlDsaKey_Free(&mo_key);
+    }
+
+    mo_packed_verify();
+}
+#endif /* WOLF_MLDSA_OCTETS */
+
+#ifdef WOLF_SECUREBOOT
+/* ------------------------------------------------------------------------- */
+/* Pure-mode ML-DSA secure boot (make SECUREBOOT=1)                          */
+/* ------------------------------------------------------------------------- */
+/* Verifies a firmware image that is stored PACKED in flash - two octets per
+ * 16-bit cell, the layout a host signing tool and the C28x programmer produce -
+ * without ever holding the image in RAM.
+ *
+ * ML-DSA has no streaming interface, but the message reaches the algorithm only
+ * through mu = SHAKE256(tr || 0x00 || ctxLen || ctx || M), and a hash streams.
+ * wc_MlDsaKey_VerifyMu() takes mu directly (ExternalMu-ML-DSA), so the image is
+ * read a chunk at a time, expanded with wc_UnpackOctets(), and absorbed.
+ * RAM cost is the chunk buffer plus 128 octets, whatever the image size. */
+
+#define SB_CHUNK 256            /* octets per flash read */
+
+static wc_MlDsaKey sb_key;      /* .bss: too big for the 16 KW C28x stack */
+
+/* Build mu over the packed image.  flip < 0 leaves the image intact; otherwise
+ * one octet is corrupted, to prove a bad image is rejected. */
+static int sb_build_mu(byte* mu, long flip)
+{
+    wc_Shake sh;
+    byte tr[MLDSA_TR_SZ];
+    byte buf[SB_CHUNK];
+    byte prefix[2];
+    word32 off;
+    int ret;
+
+    /* tr = SHAKE256(raw public key).  Constant for a fixed verification key,
+     * so a production bootloader would precompute this at build time. */
+    ret = wc_InitShake256(&sh, NULL, INVALID_DEVID);
+    if (ret == 0) {
+        ret = wc_Shake256_Update(&sh, sb_mldsa87_pub,
+            (word32)sizeof(sb_mldsa87_pub));
+    }
+    if (ret == 0) {
+        ret = wc_Shake256_Final(&sh, tr, (word32)sizeof(tr));
+    }
+    wc_Shake256_Free(&sh);
+    if (ret != 0) {
+        return ret;
+    }
+
+    /* mu = SHAKE256(tr || 0x00 || ctxLen || ctx || image).  0x00 selects pure
+     * (non pre-hash) mode; the context here is empty. */
+    prefix[0] = 0x00;
+    prefix[1] = 0x00;
+    ret = wc_InitShake256(&sh, NULL, INVALID_DEVID);
+    if (ret == 0) {
+        ret = wc_Shake256_Update(&sh, tr, (word32)sizeof(tr));
+    }
+    if (ret == 0) {
+        ret = wc_Shake256_Update(&sh, prefix, 2);
+    }
+    for (off = 0; (ret == 0) && (off < SB_IMG_SZ); off += SB_CHUNK) {
+        word32 n = SB_IMG_SZ - off;
+        if (n > SB_CHUNK) {
+            n = SB_CHUNK;
+        }
+        ret = wc_UnpackOctets(buf, (word32)sizeof(buf),
+            (const byte*)sb_image_packed + (off / WC_OCTETS_PER_BYTE),
+            WC_PACKED_CELLS(n), n);
+        if ((ret == 0) && (flip >= 0) &&
+            ((word32)flip >= off) && ((word32)flip < off + n)) {
+            buf[(word32)flip - off] ^= 0x01;
+        }
+        if (ret == 0) {
+            ret = wc_Shake256_Update(&sh, buf, n);
+        }
+    }
+    if (ret == 0) {
+        ret = wc_Shake256_Final(&sh, mu, MLDSA_MU_SZ);
+    }
+    wc_Shake256_Free(&sh);
+    return ret;
+}
+
+static void sb_verify(const char* what, long flip, int want)
+{
+    byte mu[MLDSA_MU_SZ];
+    int res = -1;
+    int ret;
+
+    ret = sb_build_mu(mu, flip);
+    if (ret == 0) {
+        ret = wc_MlDsaKey_Init(&sb_key, NULL, INVALID_DEVID);
+    }
+    if (ret == 0) {
+        ret = wc_MlDsaKey_SetParams(&sb_key, WC_ML_DSA_87);
+    }
+    if (ret == 0) {
+        ret = wc_MlDsaKey_ImportPubRaw(&sb_key, sb_mldsa87_pub,
+            (word32)sizeof(sb_mldsa87_pub));
+    }
+#ifdef WOLFSSL_MLDSA_VERIFY_PRECOMP_A
+    if (ret == 0) {
+        /* A was expanded at build time and lives in flash: verify skips the
+         * SHAKE128 rejection sampling entirely. */
+        ret = wc_MlDsaKey_SetPrecompA(&sb_key, sb_mldsa87_A, SB_A_LEN,
+            sb_rho, (word32)sizeof(sb_rho));
+    }
+#endif
+    if (ret == 0) {
+        ret = wc_MlDsaKey_VerifyMu(&sb_key, sb_mldsa87_sig,
+            (word32)sizeof(sb_mldsa87_sig), mu, MLDSA_MU_SZ, &res);
+    }
+    printf("%s %s (ret=%d res=%d)\r\n", what,
+           ((ret == 0) && (res == want)) ? "PASS" : "FAIL", ret, res);
+    wc_MlDsaKey_Free(&sb_key);
+}
+
+static void wolf_secureboot_test(void)
+{
+    printf("secure boot: %lu-octet packed image, %u-octet chunks, "
+           "image never resident\r\n",
+           (unsigned long)SB_IMG_SZ, (unsigned)SB_CHUNK);
+#ifdef WOLFSSL_MLDSA_VERIFY_PRECOMP_A
+    printf("matrix A: precomputed in flash (%ld coefficients)\r\n",
+           (long)SB_A_LEN);
+#else
+    printf("matrix A: expanded at run time (SHAKE128 rejection sampling)\r\n");
+#endif
+    sb_verify("ML-DSA-87 pure-mode packed-image verify:", -1, 1);
+    sb_verify("ML-DSA-87 corrupted-image reject:", SB_IMG_SZ / 2, 0);
+
+#ifdef WOLF_MLDSA_VERIFY_BENCH
+    /* Time the ML-DSA verify alone (mu is already built), which is the figure
+     * a bootloader budget cares about. */
+    {
+        byte mu[MLDSA_MU_SZ];
+        int res = 0;
+        int bret;
+        int bi;
+        double t;
+
+        /* Time mu construction too: for a real firmware image the streamed
+         * SHAKE-256 hashing, not the ML-DSA verify, sets the boot budget. */
+        (void)current_time(1);
+        bret = sb_build_mu(mu, -1);
+        t = current_time(0);
+        if (bret == 0) {
+            printf("mu build (%lu octets streamed): %.2f ms = %.1f KiB/s\r\n",
+                   (unsigned long)SB_IMG_SZ, t * 1000.0,
+                   ((double)SB_IMG_SZ / 1024.0) / t);
+        }
+        if (bret == 0) {
+            bret = wc_MlDsaKey_Init(&sb_key, NULL, INVALID_DEVID);
+        }
+        if (bret == 0) {
+            bret = wc_MlDsaKey_SetParams(&sb_key, WC_ML_DSA_87);
+        }
+        if (bret == 0) {
+            bret = wc_MlDsaKey_ImportPubRaw(&sb_key, sb_mldsa87_pub,
+                (word32)sizeof(sb_mldsa87_pub));
+        }
+#ifdef WOLFSSL_MLDSA_VERIFY_PRECOMP_A
+        if (bret == 0) {
+            bret = wc_MlDsaKey_SetPrecompA(&sb_key, sb_mldsa87_A, SB_A_LEN,
+                sb_rho, (word32)sizeof(sb_rho));
+        }
+#endif
+        if (bret == 0) {
+            (void)current_time(1);
+            for (bi = 0; bi < 10; bi++) {
+                (void)wc_MlDsaKey_VerifyMu(&sb_key, sb_mldsa87_sig,
+                    (word32)sizeof(sb_mldsa87_sig), mu, MLDSA_MU_SZ, &res);
+            }
+            t = current_time(0);
+            printf("ML-DSA-87 VerifyMu bench: 10 ops in %.3f s = %.2f ms/op\r\n",
+                   t, (t * 1000.0) / 10.0);
+        }
+        wc_MlDsaKey_Free(&sb_key);
+    }
+#endif
+}
+#endif /* WOLF_SECUREBOOT */
 
 #ifdef WOLF_MLDSA_SIGN
 /* ML-DSA-87 sign+verify round-trip (keygen -> sign -> verify).  Exercises
@@ -1090,6 +1511,78 @@ static void wolf_mlkem768_test(void)
 }
 #endif /* WOLF_MLKEM */
 
+#ifdef WOLF_ENTROPY
+/* On-target validation of the entropy source.  Beyond the port's SP800-90B
+ * health tests, this screens what a stuck or test-only source would fail: the
+ * raw noise is neither constant nor grossly biased, and the DRBG seeds.  The
+ * bit-count check is coarse - the real min-entropy assessment is the host
+ * analysis of an ENTROPY_PROBE=1 capture (wolfSSL IDE/C2000/README.md). */
+static void wolf_entropy_test(void)
+{
+    static byte raw[256];
+    static byte s1[32], s2[32];
+    WC_RNG rng;
+    word32 ones;
+    word32 i;
+    int b;
+    int ret;
+    int src;
+
+    ret = wc_c2000_Entropy_Init();
+    printf("Entropy init + startup health test: %s (ret=%d)\r\n",
+           (ret == 0) ? "PASS" : "FAIL", ret);
+    if (ret != 0) {
+        return;
+    }
+
+    ret = wc_c2000_Entropy_SelfTest();
+    printf("Entropy liveness self-test (raw): %s (ret=%d)\r\n",
+           (ret == 0) ? "PASS" : "FAIL", ret);
+
+    /* Raw noise sanity per source: population count should sit near half.
+     * Source 1 is optional - a build that needs DCC0 elsewhere sets
+     * WOLFSSL_C2000_ENTROPY_NUM_SRC to 1. */
+    for (src = 0; src < WOLFSSL_C2000_ENTROPY_NUM_SRC; src++) {
+        ret = wc_c2000_Entropy_GetRaw(raw, (word32)sizeof(raw), src);
+        if (ret != 0) {
+            /* raw[] holds stale data on failure, so counting it would report a
+             * meaningless balance.  Report the read error instead. */
+            printf("Entropy raw src%d bit balance: FAIL (read error %d)\r\n",
+                   src, ret);
+            continue;
+        }
+        ones = 0;
+        for (i = 0; i < (word32)sizeof(raw); i++) {
+            for (b = 0; b < 8; b++) {
+                if ((raw[i] >> b) & 1) {
+                    ones++;
+                }
+            }
+        }
+        /* 2048 bits; accept 40%..60% ones, i.e. counts 820..1228. */
+        printf("Entropy raw src%d bit balance: %s (%lu/2048 ones)\r\n",
+               src,
+               (ones > 819UL && ones < 1229UL) ? "PASS" : "FAIL",
+               (unsigned long)ones);
+    }
+
+    /* End to end: the DRBG must seed and produce differing blocks. */
+    ret = wc_InitRng(&rng);
+    printf("wc_InitRng with real entropy: %s (ret=%d)\r\n",
+           (ret == 0) ? "PASS" : "FAIL", ret);
+    if (ret == 0) {
+        ret = wc_RNG_GenerateBlock(&rng, s1, (word32)sizeof(s1));
+        if (ret == 0) {
+            ret = wc_RNG_GenerateBlock(&rng, s2, (word32)sizeof(s2));
+        }
+        printf("RNG blocks differ: %s\r\n",
+               (ret == 0 && XMEMCMP(s1, s2, sizeof(s1)) != 0)
+                   ? "PASS" : "FAIL");
+        wc_FreeRng(&rng);
+    }
+}
+#endif /* WOLF_ENTROPY */
+
 #ifdef WOLF_AES
 static void wolf_aes_test(void)
 {
@@ -1127,6 +1620,17 @@ static void wolf_aes_test(void)
     static Aes aes;
     static byte o[16], o2[16], tag[16];
     int r;
+
+    /* Must be initialised, and explicitly with INVALID_DEVID: a static Aes
+     * zero-fills devId to 0, which is a valid device id, so with WOLF_CRYPTO_CB
+     * built in (HWAES=1) every aes.c hook would attempt callback dispatch
+     * instead of skipping.  This is the software reference for the HW-vs-SW
+     * cross-checks, so it must stay unambiguously software. */
+    r = wc_AesInit(&aes, NULL, INVALID_DEVID);
+    if (r != 0) {
+        printf("AES software test: FAIL (init ret=%d)\r\n", r);
+        return;
+    }
 
     /* CBC */
     r = wc_AesSetKey(&aes, k, 16, iv, AES_ENCRYPTION);
@@ -1169,6 +1673,199 @@ static void wolf_aes_test(void)
     wc_AesFree(&aes);
 }
 #endif /* WOLF_AES */
+
+#ifdef WOLF_HWAES
+/* Cross-check the AESA hardware against software AES.
+ *
+ * Two contexts deliberately: 'hw' carries WOLFSSL_C2000_DEVID so every aes.c
+ * hook routes to the callback, 'sw' carries INVALID_DEVID so every hook skips
+ * it.  That separation matters -- with HAVE_AES_ECB on, a devId-bearing
+ * context would route even the software CTR path's internal wc_AesEcbEncrypt
+ * back to hardware.
+ *
+ * NIST SP800-38A vectors are asserted where we have them; multi-block,
+ * split-call and in-place cases are checked hardware-against-software, since
+ * software AES is already covered by wolfcrypt_test. */
+/* Set only when the AESA device actually registered.  Without it the 'hw'
+ * context silently falls back to software and every cross-check would compare
+ * software against software and report PASS. */
+static int g_aesaReady = 0;
+
+static void hw_report(const char* name, int r, const byte* a, const byte* b,
+                      word32 len)
+{
+    int cmp = XMEMCMP(a, b, len);
+    printf("HW %s: %s (ret=%d cmp=%d)\r\n", name,
+        (r == 0 && cmp == 0) ? "PASS" : "FAIL", r, cmp);
+}
+
+static void wolf_aes_hw_test(void)
+{
+    /* NIST SP800-38A F.1/F.2/F.5 four-block plaintext. */
+    static const byte pt[64] = {
+        0x6b,0xc1,0xbe,0xe2,0x2e,0x40,0x9f,0x96,
+        0xe9,0x3d,0x7e,0x11,0x73,0x93,0x17,0x2a,
+        0xae,0x2d,0x8a,0x57,0x1e,0x03,0xac,0x9c,
+        0x9e,0xb7,0x6f,0xac,0x45,0xaf,0x8e,0x51,
+        0x30,0xc8,0x1c,0x46,0xa3,0x5c,0xe4,0x11,
+        0xe5,0xfb,0xc1,0x19,0x1a,0x0a,0x52,0xef,
+        0xf6,0x9f,0x24,0x45,0xdf,0x4f,0x9b,0x17,
+        0xad,0x2b,0x41,0x7b,0xe6,0x6c,0x37,0x10};
+    static const byte k128[16] = {
+        0x2b,0x7e,0x15,0x16,0x28,0xae,0xd2,0xa6,
+        0xab,0xf7,0x15,0x88,0x09,0xcf,0x4f,0x3c};
+    static const byte k192[24] = {
+        0x8e,0x73,0xb0,0xf7,0xda,0x0e,0x64,0x52,
+        0xc8,0x10,0xf3,0x2b,0x80,0x90,0x79,0xe5,
+        0x62,0xf8,0xea,0xd2,0x52,0x2c,0x6b,0x7b};
+    static const byte k256[32] = {
+        0x60,0x3d,0xeb,0x10,0x15,0xca,0x71,0xbe,
+        0x2b,0x73,0xae,0xf0,0x85,0x7d,0x77,0x81,
+        0x1f,0x35,0x2c,0x07,0x3b,0x61,0x08,0xd7,
+        0x2d,0x98,0x10,0xa3,0x09,0x14,0xdf,0xf4};
+    static const byte iv[16] = {
+        0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,
+        0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f};
+    static const byte ctr_iv[16] = {
+        0xf0,0xf1,0xf2,0xf3,0xf4,0xf5,0xf6,0xf7,
+        0xf8,0xf9,0xfa,0xfb,0xfc,0xfd,0xfe,0xff};
+    /* First-block published answers (F.1.1, F.2.1, F.5.1). */
+    static const byte ecb_ct1[16] = {
+        0x3a,0xd7,0x7b,0xb4,0x0d,0x7a,0x36,0x60,
+        0xa8,0x9e,0xca,0xf3,0x24,0x66,0xef,0x97};
+    static const byte cbc_ct1[16] = {
+        0x76,0x49,0xab,0xac,0x81,0x19,0xb2,0x46,
+        0xce,0xe9,0x8e,0x9b,0x12,0xe9,0x19,0x7d};
+    /* Full 64-octet CTR answer, not just block 1: this vector's counter starts
+     * at ...fe ff, so block 2 is the first needing a carry across an octet
+     * boundary, and checking only block 1 hides a broken increment. */
+    static const byte ctr_ct[64] = {
+        0x87,0x4d,0x61,0x91,0xb6,0x20,0xe3,0x26,
+        0x1b,0xef,0x68,0x64,0x99,0x0d,0xb6,0xce,
+        0x98,0x06,0xf6,0x6b,0x79,0x70,0xfd,0xff,
+        0x86,0x17,0x18,0x7b,0xb9,0xff,0xfd,0xff,
+        0x5a,0xe4,0xdf,0x3e,0xdb,0xd5,0xd3,0x5e,
+        0x5b,0x4f,0x09,0x02,0x0d,0xb0,0x3e,0xab,
+        0x1e,0x03,0x1d,0xda,0x2f,0xbe,0x03,0xd1,
+        0x79,0x21,0x70,0xa0,0xf3,0x00,0x9c,0xee};
+
+    /* .bss, not stack: the C28x stack is 16 KW and an Aes is not small. */
+    static Aes hw, sw;
+    static byte oh[64], os[64], dh[64];
+    int rh, rs;
+
+    if (!g_aesaReady) {
+        printf("HW AES cross-checks: SKIP (AESA not registered)\r\n");
+        return;
+    }
+
+    rh = wc_AesInit(&hw, NULL, WOLFSSL_C2000_DEVID);
+    if (rh != 0) {
+        printf("HW AES init (hw ctx): FAIL (ret=%d)\r\n", rh);
+        return;
+    }
+    rs = wc_AesInit(&sw, NULL, INVALID_DEVID);
+    if (rs != 0) {
+        printf("HW AES init (sw ctx): FAIL (ret=%d)\r\n", rs);
+        wc_AesFree(&hw);
+        return;
+    }
+
+    /* ---- ECB, 64 octets (exercises the multi-block loop) ---- */
+    rh = wc_AesSetKey(&hw, k128, 16, NULL, AES_ENCRYPTION);
+    rs = wc_AesSetKey(&sw, k128, 16, NULL, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesEcbEncrypt(&hw, oh, pt, 64);
+    if (rs == 0) rs = wc_AesEcbEncrypt(&sw, os, pt, 64);
+    hw_report("AES-128-ECB encrypt vs NIST", rh, oh, ecb_ct1, 16);
+    hw_report("AES-128-ECB encrypt vs SW", ((rh != 0) ? rh : rs), oh, os, 64);
+
+    rh = wc_AesSetKey(&hw, k128, 16, NULL, AES_DECRYPTION);
+    if (rh == 0) rh = wc_AesEcbDecrypt(&hw, dh, oh, 64);
+    hw_report("AES-128-ECB decrypt round-trip", rh, dh, pt, 64);
+
+    /* ---- CBC, 64 octets ---- */
+    rh = wc_AesSetKey(&hw, k128, 16, iv, AES_ENCRYPTION);
+    rs = wc_AesSetKey(&sw, k128, 16, iv, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesCbcEncrypt(&hw, oh, pt, 64);
+    if (rs == 0) rs = wc_AesCbcEncrypt(&sw, os, pt, 64);
+    hw_report("AES-128-CBC encrypt vs NIST", rh, oh, cbc_ct1, 16);
+    hw_report("AES-128-CBC encrypt vs SW", ((rh != 0) ? rh : rs), oh, os, 64);
+
+    rh = wc_AesSetKey(&hw, k128, 16, iv, AES_DECRYPTION);
+    if (rh == 0) rh = wc_AesCbcDecrypt(&hw, dh, oh, 64);
+    hw_report("AES-128-CBC decrypt round-trip", rh, dh, pt, 64);
+
+    /* ---- CBC split across calls: proves aes->reg chaining ---- */
+    rh = wc_AesSetKey(&hw, k128, 16, iv, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesCbcEncrypt(&hw, oh, pt, 16);
+    if (rh == 0) rh = wc_AesCbcEncrypt(&hw, oh + 16, pt + 16, 48);
+    hw_report("AES-128-CBC split-call chain", rh, oh, os, 64);
+
+    /* ---- CBC in-place decrypt: proves the last-block save ---- */
+    XMEMCPY(dh, os, 64);
+    rh = wc_AesSetKey(&hw, k128, 16, iv, AES_DECRYPTION);
+    if (rh == 0) rh = wc_AesCbcDecrypt(&hw, dh, dh, 64);
+    hw_report("AES-128-CBC in-place decrypt", rh, dh, pt, 64);
+
+    /* ---- CTR, 64 octets ---- */
+    rh = wc_AesSetKey(&hw, k128, 16, ctr_iv, AES_ENCRYPTION);
+    rs = wc_AesSetKey(&sw, k128, 16, ctr_iv, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesCtrEncrypt(&hw, oh, pt, 64);
+    if (rs == 0) rs = wc_AesCtrEncrypt(&sw, os, pt, 64);
+    hw_report("AES-128-CTR vs NIST (64B)", rh, oh, ctr_ct, 64);
+    hw_report("AES-128-CTR SW vs NIST (64B)", rs, os, ctr_ct, 64);
+    hw_report("AES-128-CTR vs SW", ((rh != 0) ? rh : rs), oh, os, 64);
+
+    /* ---- CTR split at a non-block boundary: proves aes->left/aes->tmp ---- */
+    rh = wc_AesSetKey(&hw, k128, 16, ctr_iv, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesCtrEncrypt(&hw, oh, pt, 10);
+    if (rh == 0) rh = wc_AesCtrEncrypt(&hw, oh + 10, pt + 10, 54);
+    hw_report("AES-128-CTR partial split", rh, oh, os, 64);
+
+    /* ---- 192- and 256-bit keys: the 6- and 8-word AES_setKey1 paths ---- */
+    rh = wc_AesSetKey(&hw, k192, 24, iv, AES_ENCRYPTION);
+    rs = wc_AesSetKey(&sw, k192, 24, iv, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesCbcEncrypt(&hw, oh, pt, 64);
+    if (rs == 0) rs = wc_AesCbcEncrypt(&sw, os, pt, 64);
+    hw_report("AES-192-CBC encrypt vs SW", ((rh != 0) ? rh : rs), oh, os, 64);
+
+    rh = wc_AesSetKey(&hw, k256, 32, iv, AES_ENCRYPTION);
+    rs = wc_AesSetKey(&sw, k256, 32, iv, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesCbcEncrypt(&hw, oh, pt, 64);
+    if (rs == 0) rs = wc_AesCbcEncrypt(&sw, os, pt, 64);
+    hw_report("AES-256-CBC encrypt vs SW", ((rh != 0) ? rh : rs), oh, os, 64);
+
+    /* ECB and CTR at 192/256 too: the accelerator's key schedule differs per
+     * key size, and marshalling the longer schedule into its 32-bit registers
+     * is exactly the octet handling this port is validating. */
+    rh = wc_AesSetKey(&hw, k192, 24, NULL, AES_ENCRYPTION);
+    rs = wc_AesSetKey(&sw, k192, 24, NULL, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesEcbEncrypt(&hw, oh, pt, 64);
+    if (rs == 0) rs = wc_AesEcbEncrypt(&sw, os, pt, 64);
+    hw_report("AES-192-ECB encrypt vs SW", ((rh != 0) ? rh : rs), oh, os, 64);
+
+    rh = wc_AesSetKey(&hw, k256, 32, NULL, AES_ENCRYPTION);
+    rs = wc_AesSetKey(&sw, k256, 32, NULL, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesEcbEncrypt(&hw, oh, pt, 64);
+    if (rs == 0) rs = wc_AesEcbEncrypt(&sw, os, pt, 64);
+    hw_report("AES-256-ECB encrypt vs SW", ((rh != 0) ? rh : rs), oh, os, 64);
+
+    rh = wc_AesSetKey(&hw, k192, 24, ctr_iv, AES_ENCRYPTION);
+    rs = wc_AesSetKey(&sw, k192, 24, ctr_iv, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesCtrEncrypt(&hw, oh, pt, 64);
+    if (rs == 0) rs = wc_AesCtrEncrypt(&sw, os, pt, 64);
+    hw_report("AES-192-CTR encrypt vs SW", ((rh != 0) ? rh : rs), oh, os, 64);
+
+    rh = wc_AesSetKey(&hw, k256, 32, ctr_iv, AES_ENCRYPTION);
+    rs = wc_AesSetKey(&sw, k256, 32, ctr_iv, AES_ENCRYPTION);
+    if (rh == 0) rh = wc_AesCtrEncrypt(&hw, oh, pt, 64);
+    if (rs == 0) rs = wc_AesCtrEncrypt(&sw, os, pt, 64);
+    hw_report("AES-256-CTR encrypt vs SW", ((rh != 0) ? rh : rs), oh, os, 64);
+
+    wc_AesFree(&hw);
+    wc_AesFree(&sw);
+}
+#endif /* WOLF_HWAES */
 
 #ifdef WOLF_25519
 static void wolf_curve25519_test(void)
@@ -1565,12 +2262,13 @@ static void wolf_aes_modes_test(void)
 #ifdef WOLFSSL_AES_OFB
     {
         static Aes oaes;
-        r = wc_AesSetKey(&oaes, mk, 16, miv, AES_ENCRYPTION);
+        r = wc_AesInit(&oaes, NULL, INVALID_DEVID);
+        if (r == 0) r = wc_AesSetKey(&oaes, mk, 16, miv, AES_ENCRYPTION);
         if (r == 0) r = wc_AesOfbEncrypt(&oaes, mct, mpt, 32);
         if (r == 0) r = wc_AesSetKey(&oaes, mk, 16, miv, AES_ENCRYPTION);
         if (r == 0) r = wc_AesOfbDecrypt(&oaes, mdec, mct, 32);
-        printf("AES-128-OFB round-trip: %s\r\n",
-            (r == 0 && XMEMCMP(mdec, mpt, 32) == 0) ? "PASS":"FAIL");
+        printf("AES-128-OFB round-trip: %s (ret=%d)\r\n",
+            (r == 0 && XMEMCMP(mdec, mpt, 32) == 0) ? "PASS":"FAIL", r);
         wc_AesFree(&oaes);
     }
 #endif
@@ -1747,9 +2445,35 @@ int main(void)
     printf("\r\n");
     printf("=== wolfSSL wolfCrypt on TI C2000 LAUNCHXL-F28P55X ===\r\n");
 
+#ifdef WOLF_ENTROPY_PROBE
+    /* Measurement-only image: dump raw entropy samples and stop.  Nothing
+     * after this runs, which is why the Makefile rejects combining
+     * ENTROPY_PROBE=1 with the other image toggles. */
+    entropy_probe_run();
+    for (;;) {
+        /* spin */
+    }
+#endif
+
 #ifdef WOLF_MEM_PROFILE
     /* Route XMALLOC/XFREE/XREALLOC through the heap high-water tracker. */
     wolf_mem_install();
+#endif
+
+#ifdef WOLF_HWAES
+    /* wolfCrypt_Init() is mandatory first: it sets every device-table slot to
+     * INVALID_DEVID, and RegisterDevice only claims a slot marked that way.
+     * Without it the table is BSS-zero and registration fails with BUFFER_E. */
+    if (wolfCrypt_Init() != 0) {
+        printf("wolfCrypt_Init: FAIL\r\n");
+    }
+    else if (wc_C2000_Init(WOLFSSL_C2000_DEVID) != 0) {
+        printf("C2000 AESA init: FAIL\r\n");
+    }
+    else {
+        printf("C2000 AESA init: PASS\r\n");
+        g_aesaReady = 1;
+    }
 #endif
 
     wolf_sha3_256_test();
@@ -1763,7 +2487,13 @@ int main(void)
     wolf_sha1_test();
 #endif
 
-#ifndef WOLF_MLDSA_SIGN
+#ifdef WOLF_SECUREBOOT
+    printf("\r\n--- Pure-mode ML-DSA secure boot ---\r\n");
+    wolf_secureboot_test();
+#elif defined(WOLF_MLDSA_OCTETS)
+    printf("\r\n--- ML-DSA octet boundary (44/65/87, pre-hash, packed) ---\r\n");
+    wolf_mldsa_octet_test();
+#elif !defined(WOLF_MLDSA_SIGN)
     wolf_mldsa87_verify_test();
 #else
     wolf_mldsa87_sign_test();
@@ -1773,7 +2503,7 @@ int main(void)
 #ifndef WOLFSSL_NO_ML_DSA_65
     mldsa_sign_roundtrip(WC_ML_DSA_65, "ML-DSA-65");
 #endif
-#endif /* !WOLF_MLDSA_SIGN */
+#endif /* ML-DSA test selection */
 
 #ifdef WOLF_ECC
     printf("\r\n--- ECDSA/ECDH P-256 (SP) ---\r\n");
@@ -1791,10 +2521,20 @@ int main(void)
 #endif
 #endif /* WOLF_MLKEM */
 
+#ifdef WOLF_ENTROPY
+    printf("\r\n--- Entropy (oscillator jitter) ---\r\n");
+    wolf_entropy_test();
+#endif /* WOLF_ENTROPY */
+
 #ifdef WOLF_AES
     printf("\r\n--- AES (CBC/CTR/CFB/GCM) ---\r\n");
     wolf_aes_test();
 #endif /* WOLF_AES */
+
+#ifdef WOLF_HWAES
+    printf("\r\n--- AES hardware (AESA) vs software ---\r\n");
+    wolf_aes_hw_test();
+#endif /* WOLF_HWAES */
 
 #ifdef WOLF_25519
     printf("\r\n--- Curve25519 (X25519) + Ed25519 ---\r\n");

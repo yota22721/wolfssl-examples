@@ -153,6 +153,16 @@ extern "C" {
 #undef  WOLFSSL_NO_ML_DSA_65
 #define WOLFSSL_NO_ML_DSA_65
 
+#ifdef WOLF_MLDSA_ALL_LEVELS
+/* The octet-boundary KAT image (make MLDSA=1) verifies at all three parameter
+ * sets.  Level 44 matters disproportionately here: it is the only one whose w1
+ * commitment encoder packs 6-bit values (mldsa_encode_w1_88_c), so it is the
+ * only one that exercises that packer's octet masking at CHAR_BIT == 16.
+ * Levels 65 and 87 pack 4-bit values, which cannot overflow an octet. */
+#undef  WOLFSSL_NO_ML_DSA_44
+#undef  WOLFSSL_NO_ML_DSA_65
+#endif
+
 /* Raw key/sig import - no ASN.1 (both modes). */
 #undef  WOLFSSL_MLDSA_NO_ASN1
 #define WOLFSSL_MLDSA_NO_ASN1
@@ -194,7 +204,17 @@ extern "C" {
  * time instead of pinning the whole l-vector (saves ~6 KB on ML-DSA-87).
  * Measured on F28P55x: sizeof(wc_MlDsaKey) 20,048 -> 13,904 bytes. */
 #undef  WOLFSSL_MLDSA_VERIFY_SMALLEST_MEM
+#ifndef WOLF_MLDSA_FAST_VERIFY
+/* Smallest RAM: streams the signature's z vector one polynomial at a time, so
+ * each z is re-decoded and re-NTT'd k times instead of once.  FASTVERIFY=1
+ * trades that RAM back for speed. */
 #define WOLFSSL_MLDSA_VERIFY_SMALLEST_MEM
+#else
+/* Keep the whole z vector (+~6 KB RAM) and accumulate A.z in a 64-bit poly so
+ * one Montgomery reduction is done per coefficient instead of per (k,l) pair. */
+#undef  WOLFSSL_MLDSA_SMALL_MEM_POLY64
+#define WOLFSSL_MLDSA_SMALL_MEM_POLY64
+#endif
 /* Optional on this part: also define WOLFSSL_MLDSA_ASSIGN_KEY to keep the
  * public key in flash (by reference) instead of copying it into the key
  * struct - that removes a further ~5 KB of RAM (the 2,592-octet public key is
@@ -327,6 +347,36 @@ extern "C" {
 #else
 #undef  NO_AES                 /* AES enabled only with AES=1 */
 #define NO_AES
+#endif
+
+#ifdef WOLF_HWAES
+/* Offload AES-ECB/CBC/CTR to the on-chip AESA block through the crypto
+ * callback framework.  Software AES stays compiled in: a context opts into
+ * hardware with wc_AesInit(&aes, NULL, WOLFSSL_C2000_DEVID), while one
+ * initialised with INVALID_DEVID stays pure software.  That is what lets the
+ * KAT harness cross-check the two in a single image, so deliberately do NOT
+ * define WOLF_CRYPTO_CB_ONLY_AES. */
+#undef  WOLF_CRYPTO_CB
+#define WOLF_CRYPTO_CB
+#undef  WOLFSSL_C2000_AES
+#define WOLFSSL_C2000_AES
+
+/* HAVE_AES_ECB is what compiles wc_AesEcbEncrypt/Decrypt and, with it, the ECB
+ * crypto-callback hook the hardware port needs; WOLFSSL_AES_DIRECT alone only
+ * creates the callback plumbing, not the entry points.  Kept inside the HWAES
+ * block: it also switches the software CTR path to the bulk-ECB strategy and
+ * costs code size, so a software-only AES=1 build should not pay for it. */
+#undef  HAVE_AES_ECB
+#define HAVE_AES_ECB
+
+/* Single source of truth for the AESA device id.  ti-c2000.h defaults this to
+ * 0x2000 behind #ifndef, so setting it here wins and lets WC_USE_DEVID be
+ * derived from it: wolfcrypt_test and benchmark then target the same device
+ * the KAT harness passes to wc_AesInit(), with no literal to keep in sync. */
+#undef  WOLFSSL_C2000_DEVID
+#define WOLFSSL_C2000_DEVID 0x2000
+#undef  WC_USE_DEVID
+#define WC_USE_DEVID WOLFSSL_C2000_DEVID
 #endif
 
 /* Curve25519 (X25519) + Ed25519.  Enabled with EXTRA_CFLAGS=--define=WOLF_25519
@@ -540,15 +590,27 @@ extern long my_time(long* t);
 /* ------------------------------------------------------------------------- */
 /* RNG - real SHA-256 Hash-DRBG seeded by a DEV-ONLY test seed                */
 /* ------------------------------------------------------------------------- */
-/* The F28P550SJ has no hardware TRNG, so there is no real entropy source.
- * WOLFSSL_GENSEED_FORTEST makes random.c supply a built-in wc_GenerateSeed
- * (an incrementing test value) that feeds the standard SHA-256 Hash-DRBG.
- * This exercises the real DRBG code path (what a production build with a TRNG
- * would use) and lets random_test pass - but the seed is NOT random, so this
- * is DEV/TEST ONLY and MUST NOT be shipped.  Replace wc_GenerateSeed with a
- * real TRNG before any production use. */
+#ifdef WOLF_ENTROPY
+/* Real entropy: the on-chip oscillator-jitter source.  The F28P550SJ has no
+ * TRNG, but it does have two independent RC oscillators and a crystal-derived
+ * PLL, and a Dual-Clock Comparator that can count one against another.  The
+ * LSB of that count is the noise bit; it is oversampled well past its measured
+ * min-entropy, health-tested per SP800-90B 4.4, SHA-256 conditioned, and fed
+ * to the same SHA-256 Hash-DRBG.  See IDE/C2000/README.md in the wolfSSL tree
+ * for the on-hardware characterization. */
+#undef  WOLFSSL_C2000_ENTROPY
+#define WOLFSSL_C2000_ENTROPY
+#else
+/* The F28P550SJ has no hardware TRNG, so without ENTROPY=1 there is no real
+ * entropy source.  WOLFSSL_GENSEED_FORTEST makes random.c supply a built-in
+ * wc_GenerateSeed (an incrementing test value) that feeds the standard SHA-256
+ * Hash-DRBG.  This exercises the real DRBG code path (what a production build
+ * with a TRNG would use) and lets random_test pass - but the seed is NOT
+ * random, so this is DEV/TEST ONLY and MUST NOT be shipped.  Build with
+ * ENTROPY=1 for the real source. */
 #undef  WOLFSSL_GENSEED_FORTEST
 #define WOLFSSL_GENSEED_FORTEST
+#endif
 
 /* Run every self-test to completion and report each, so macro_test (a 16-bit
  * safe-math self-test that currently fails on C28x) does not abort the suite
