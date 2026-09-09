@@ -1,0 +1,3 @@
+# slc generate output
+build/
+.wolfcrypt_test.local.slcp
