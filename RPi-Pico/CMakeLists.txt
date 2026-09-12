@@ -6,7 +6,7 @@ include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
 # Pull in FreeRTOS if available (required for WiFi/TCP/TLS examples)
 if (DEFINED ENV{FREERTOS_KERNEL_PATH})
-    include($ENV{FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
+    include($ENV{FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2350_ARM_NTZ/FreeRTOS_Kernel_import.cmake)
 endif()
 
 
@@ -23,9 +23,10 @@ pico_sdk_init()
 
 option(USE_UART "Output over UART instead of USB" OFF)
 option(USE_WIFI "Enable WiFi" OFF)
-option(WIFI_SSID "The WiFi SSID to connect to" "")
-option(WIFI_PASSWORD "The WiFi password" "")
-option(TEST_TCP_SERVER_IP "The TCP test server IP" "")
+set(WIFI_SSID "" CACHE STRING "The WiFi SSID to connect to")
+set(WIFI_PASSWORD "" CACHE STRING "The WiFi password")
+set(TEST_TCP_SERVER_IP "" CACHE STRING "The TCP test server IP")
+set(DATETIME "" CACHE STRING "Initial date and time in YYMMDDhhmmss format")
 
 if (USE_WIFI AND NOT PICO_CYW43_SUPPORTED)
     message(FATAL_ERROR "You can only set USE_WIFI when a PICO_BOARD with wifi is used")
@@ -38,23 +39,22 @@ endif()
 ### Global Include Path
     include_directories(config)
     include_directories(include)
-    include_directories(${PICO_SDK_PATH}/src/rp2_common/pico_lwip/include)
     include_directories(${PICO_SDK_PATH}/src/rp2_common/hardware_rtc/include)
-    include_directories(${PICO_SDK_PATH}/lib/lwip/contrib/ports/freertos/include)
-    include_directories(${PICO_SDK_PATH}/lib/lwip/src/include)
-    include_directories(${PICO_SDK_PATH}/src/rp2_common/pico_async_context/include)
-    #include_directories(${PICO_SDK_PATH}/lib/btstack/test/embedded/)
+    include_directories(${PICO_SDK_PATH}/src/rp2_common/pico_cyw43_arch/include/pico/cyw43_arch)
 
     set(WOLFSSL_ROOT $ENV{WOLFSSL_ROOT})
     if (DEFINED ENV{FREERTOS_KERNEL_PATH})
         set(FREERTOS_KERNEL_PATH $ENV{FREERTOS_KERNEL_PATH})
         include_directories(${FREERTOS_KERNEL_PATH}/include/)
-        include_directories(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/include)
     endif()
+
     include_directories(${WOLFSSL_ROOT})
 ### End of Global Include Path
 
     include(wolfssl_import.cmake)
+    if (USE_WIFI)
+        include(wolfip_import.cmake)
+    endif()
 
     add_subdirectory(testwolfcrypt)
     add_subdirectory(benchmark)

@@ -22,7 +22,9 @@
 #ifndef TCP_H
 #define TCP_H
 
-void tcp_initThread(void);
+struct wolfIP;
+
+int tcp_initThread(void);
+struct wolfIP *tcp_get_ipstack(void);
 
 #endif
-

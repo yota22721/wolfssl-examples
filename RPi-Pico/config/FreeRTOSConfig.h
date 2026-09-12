@@ -42,6 +42,15 @@
 #define configSTACK_DEPTH_TYPE uint32_t
 #define configMESSAGE_BUFFER_LENGTH_TYPE size_t
 
+#if defined(PICO_RP2350)
+/* Required by the RP2350 Armv8-M non-secure FreeRTOS port. */
+#define configENABLE_MPU 0
+#define configENABLE_TRUSTZONE 0
+#define configRUN_FREERTOS_SECURE_ONLY 1
+#define configENABLE_FPU 1
+#define configMAX_SYSCALL_INTERRUPT_PRIORITY 16
+#endif
+
 /* Memory allocation related definitions. */
 #define configSUPPORT_STATIC_ALLOCATION 1
 #define configSUPPORT_DYNAMIC_ALLOCATION 1
@@ -72,11 +81,13 @@
 /* SMP port only */
 #define configNUM_CORES 2
 #define configTICK_CORE 0
+#define configNUMBER_OF_CORES                   2
+#define configUSE_PASSIVE_IDLE_HOOK             0
 #define configRUN_MULTIPLE_PRIORITIES 1
 #define configUSE_CORE_AFFINITY 1
 #endif
 
-/* RP2040 specific */
+/* Raspberry Pi Pico SDK integration. */
 #define configSUPPORT_PICO_SYNC_INTEROP 1
 #define configSUPPORT_PICO_TIME_INTEROP 1
 

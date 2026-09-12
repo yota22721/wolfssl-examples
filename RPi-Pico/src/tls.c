@@ -19,8 +19,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335, USA
  */
 
-#include "lwip/init.h"
-#include "lwip/sockets.h"
+#include <stdio.h>
+
+#include "bsd_socket.h"
 
 #include "wolfssl/wolfcrypt/settings.h"
 #include "wolfssl/ssl.h"
@@ -38,12 +39,9 @@ int my_IORecv(WOLFSSL *ssl, char *buff, int sz, void *ctx)
         /* error encountered. Be responsible and report it in wolfSSL terms */
 
         fprintf(stderr, "IO RECEIVE ERROR: ");
-        switch (errno)
+        switch (socket_last_error())
         {
-#if EAGAIN != EWOULDBLOCK
-        case EAGAIN: /* EAGAIN == EWOULDBLOCK on some systems, but not others */
-#endif
-        case EWOULDBLOCK:
+        case WOLFIP_EAGAIN:
             if (!wolfSSL_dtls(ssl) || wolfSSL_get_using_nonblock(ssl))
             {
                 fprintf(stderr, "would block\n");
@@ -54,18 +52,6 @@ int my_IORecv(WOLFSSL *ssl, char *buff, int sz, void *ctx)
                 fprintf(stderr, "socket timeout\n");
                 return WOLFSSL_CBIO_ERR_TIMEOUT;
             }
-        case ECONNRESET:
-            fprintf(stderr, "connection reset\n");
-            return WOLFSSL_CBIO_ERR_CONN_RST;
-        case EINTR:
-            fprintf(stderr, "socket interrupted\n");
-            return WOLFSSL_CBIO_ERR_ISR;
-        case ECONNREFUSED:
-            fprintf(stderr, "connection refused\n");
-            return WOLFSSL_CBIO_ERR_WANT_READ;
-        case ECONNABORTED:
-            fprintf(stderr, "connection aborted\n");
-            return WOLFSSL_CBIO_ERR_CONN_CLOSE;
         default:
             fprintf(stderr, "general error\n");
             return WOLFSSL_CBIO_ERR_GENERAL;
@@ -98,23 +84,11 @@ int my_IOSend(WOLFSSL *ssl, char *buff, int sz, void *ctx)
         /* error encountered. Be responsible and report it in wolfSSL terms */
 
         fprintf(stderr, "IO SEND ERROR: ");
-        switch (errno)
+        switch (socket_last_error())
         {
-#if EAGAIN != EWOULDBLOCK
-        case EAGAIN: /* EAGAIN == EWOULDBLOCK on some systems, but not others */
-#endif
-        case EWOULDBLOCK:
+        case WOLFIP_EAGAIN:
             fprintf(stderr, "would block\n");
             return WOLFSSL_CBIO_ERR_WANT_WRITE;
-        case ECONNRESET:
-            fprintf(stderr, "connection reset\n");
-            return WOLFSSL_CBIO_ERR_CONN_RST;
-        case EINTR:
-            fprintf(stderr, "socket interrupted\n");
-            return WOLFSSL_CBIO_ERR_ISR;
-        case EPIPE:
-            fprintf(stderr, "socket EPIPE\n");
-            return WOLFSSL_CBIO_ERR_CONN_CLOSE;
         default:
             fprintf(stderr, "general error\n");
             return WOLFSSL_CBIO_ERR_GENERAL;

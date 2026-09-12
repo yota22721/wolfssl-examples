@@ -20,20 +20,24 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "lwip/init.h"
-#include "lwip/sockets.h"
+#include "bsd_socket.h"
 
 #include "wolf/wifi.h"
 #include "wolf/blink.h"
 #include "wolf/tcp.h"
 
 #define TCP_PORT 11111
+
+#ifndef htons
+#define htons(x) ee16(x)
+#endif
 
 void tcpClient_test(void *arg)
 {
@@ -45,22 +49,22 @@ void tcpClient_test(void *arg)
     #define SIZE_OF_CLIENT_HELLO 16
     char msg[SIZE_OF_CLIENT_HELLO] = "Client Hello";
 
-    int sock;
-    struct sockaddr_in servAddr;
+    int sock = -1;
+    struct wolfIP_sockaddr_in servAddr;
 
     cyw43_arch_init();
 
     printf("Connecting to Wi-Fi...\n");
     if (wolf_wifiConnect(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 5000)) {
         printf("failed to connect.\n");
-        return;
+        goto exit;
     }
     else {
         printf("Wifi connected.\n");
     }
 
-    lwip_init();
-    tcp_initThread();
+    if (tcp_initThread() != 0)
+        goto exit;
 
     printf("Starting TCP client\n");
 
@@ -76,25 +80,22 @@ void tcpClient_test(void *arg)
         servAddr.sin_port = htons(TCP_PORT); /* on DEFAULT_PORT */
 
         printf("Connecting to the server(%s)\n", TEST_TCP_SERVER_IP);
-        if (inet_pton(AF_INET, TEST_TCP_SERVER_IP, &servAddr.sin_addr) != 1) {
-            fprintf(stderr, "ERROR: invalid address\n");
-            goto exit;
-        }
+        servAddr.sin_addr.s_addr = ee32(atoip4(TEST_TCP_SERVER_IP));
 
-        if ((ret = connect(sock,(struct sockaddr*) &servAddr, 
-                                sizeof(servAddr))) != EXIT_SUCCESS) {
+        if ((ret = connect(sock,(struct wolfIP_sockaddr *) &servAddr,
+                                 sizeof(servAddr))) != 0) {
             printf("ERROR:connect(%d)\n", ret);
             goto exit;
         }
 
         printf("Writing to server: %s\n", msg);
-        ret = write(sock, msg, sizeof(msg));
+        ret = send(sock, msg, sizeof(msg), 0);
         if (ret < 0) {
             printf("Failed to write data. err=%d\n", ret);
             goto exit;
         }
         
-        ret = read(sock, buffer, BUFF_SIZE);
+        ret = recv(sock, buffer, BUFF_SIZE - 1, 0);
         if (ret < 0) {
             printf("Failed to read data. err=%d\n", ret);
             goto exit;
@@ -102,16 +103,16 @@ void tcpClient_test(void *arg)
         buffer[ret] = '\0';
         printf("Received message[%d]: %s\n", i, buffer);
         close(sock);
+        sock = -1;
     }
 
     printf("End of TCP client\n");
 
-    cyw43_arch_deinit();
-
-    printf("Wifi disconnected\n");
-
 exit:
-    close(sock);
+    if (sock >= 0)
+        close(sock);
+    cyw43_arch_deinit();
+    printf("Wifi disconnected\n");
 }
 
 void main(void)
