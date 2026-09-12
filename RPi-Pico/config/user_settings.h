@@ -37,7 +37,9 @@ extern "C"
 #define TARGET_EMBEDDED
 
 #define WOLFSSL_RPIPICO
-#define WOLFSSL_LWIP
+#define WOLFSSL_NO_SOCK
+//#define WOLFSSL_LWIP
+#define WOLFSSL_WOLFIP
 
 extern time_t myTime(time_t *);
 #define XTIME(t) myTime(t)
@@ -243,7 +245,7 @@ extern time_t myTime(time_t *);
 /* Ed25519 / Curve25519 */
 #undef HAVE_CURVE25519
 #undef HAVE_ED25519
-#if 1
+#if 0
 #define HAVE_CURVE25519
 #define HAVE_ED25519 /* ED25519 Requires SHA512 */
 
@@ -256,7 +258,7 @@ extern time_t myTime(time_t *);
 /* Ed448 / Curve448 */
 #undef HAVE_CURVE448
 #undef HAVE_ED448
-#if 1
+#if 0
 #define HAVE_CURVE448
 #define HAVE_ED448 /* ED448 Requires SHA512 */
 #define WOLFSSL_SHAKE256
@@ -309,7 +311,7 @@ extern time_t myTime(time_t *);
 
 /* Sha3 */
 #undef WOLFSSL_SHA3
-#if 1
+#if 0
 #define WOLFSSL_SHA3
 #endif
 

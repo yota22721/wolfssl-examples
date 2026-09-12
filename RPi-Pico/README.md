@@ -38,27 +38,35 @@ export WOLFSSL_ROOT=/path/to/wolfssl/source
 export PICO_SDK_PATH=/path/to/pico-sdk
 ```
 
-### 3. Set `FREERTOS_KERNEL_PATH`
-If you want to use TCP/TLS server or client, You also need to have the [FreeRTOS-Kernel GitHub repository](https://github.com/FreeRTOS/FreeRTOS-Kernel).
+### 3. Set `WOLFIP_ROOT`
+If you want to use TCP/TLS server or client, you also need to have the [wolfIP GitHub repository](https://github.com/wolfSSL/wolfIP).
+
+```
+export WOLFIP_ROOT=/path/to/wolfip
+```
+
+### 4. Set `FREERTOS_KERNEL_PATH`
+If you want to use TCP/TLS server or client, you also need to have the [Raspberry Pi FreeRTOS-Kernel GitHub repository](https://github.com/raspberrypi/FreeRTOS-Kernel).
+
 ```
 export FREERTOS_KERNEL_PATH=/path/to/FreeRTOS-Kernel
 ```
 
-### 4. cmake and make
+### 5. cmake and make
 
 The following CMAKE options are available:
 
-* `PICO_BOARD` - This should be set to `pico` for a Pi Pico, `pico_w` for a Pi Pico with WiFi or `pico2` for a Pi Pico 2. A full list of boards for this option can be found [here](https://github.com/raspberrypi/pico-sdk/tree/master/src/boards/include/boards), just ignore the `.h` at the end.
+* `PICO_BOARD` - Set this to `pico` for a Pi Pico, `pico_w` for a Pi Pico W, `pico2` for a Pi Pico 2, or `pico2_w` for a Pi Pico 2 W. A full list of boards for this option can be found [here](https://github.com/raspberrypi/pico-sdk/tree/master/src/boards/include/boards), just ignore the `.h` at the end.
 * `USE_WIFI` - Build the tests that use WiFi, only works when `PICO_BOARD` defined has a CYW43 WiFi chip.
 * `USE_UART` - Output to UART instead of USB, for the Pi Debug Probe.
 * `WIFI_SSID` - The SSID to connect to (if `USE_WIFI` is set).
 * `WIFI_PASSWORD` - The password used for the WiFi network (if `USE_WIFI` is set).
-* `TEST_TCP_SERVER_IP` - The test server to connect to for the TCP client test (if `USE_WIFI` is set).
-
-To use the RP2350 in RISC-V mode, add `-DPICO_PLATFORM=rp2350-riscv`.
+* `TEST_TCP_SERVER_IP` - The test server to connect to for the TCP and TLS client tests (if `USE_WIFI` is set).
+* `DATETIME` - The initial date and time in `YYMMDDhhmmss` format for the TLS tests.
 
 ```
 $ cd RPi-Pico
+$ mkdir build && cd build
 $ cmake -DPICO_BOARD=pico_w ..
 $ make
 ```
@@ -79,7 +87,7 @@ The build produces the following UF2 images:
 
 - tls_Server.uf2
 
-### 5. Upload to the Pico
+### 6. Upload to the Pico
 
 Hold the boot button and plug the Pico into your computer, you can then
 drag/drop a `.uf2` to the Pico. It will stop becoming a USB mass storage device
@@ -91,7 +99,7 @@ sudo picotool load benchmark.uf2
 sudo picotool reboot
 ```
 
-### 6. Serial output
+### 7. Serial output
 
 If you have not set `USE_UART`, once rebooted the USB port will turn into an
 "Abstract Control Module" serial port. On Linux this will likely be

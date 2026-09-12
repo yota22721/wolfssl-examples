@@ -1,7 +1,7 @@
 add_executable(tcp_Client
-    ../src/blink.c
     ../src/wifi.c
     ../src/tcp.c
+    ../src/wolfip_platform.c
     ../src/tcpClient_main.c
     ../src/idleMemory.c
 )
@@ -11,15 +11,17 @@ target_compile_definitions(tcp_Client PRIVATE
     WIFI_PASSWORD=\"${WIFI_PASSWORD}\"
     TEST_TCP_SERVER_IP=\"${TEST_TCP_SERVER_IP}\"
     NO_SYS=0
-    LWIP_SOCKET
-    LWIP_COMPAT_SOCKETS
+    CYW43_LWIP=0
+    PICO_CYW43_ARCH_FREERTOS=1
     PING_USE_SOCKETS=1
 )
 
 target_link_libraries(tcp_Client
     pico_stdlib
     pico_rand
-    pico_cyw43_arch_lwip_sys_freertos
+    pico_cyw43_arch_sys_freertos
+    wolfssl
+    wolfip
     FreeRTOS-Kernel-Heap4
 )
 

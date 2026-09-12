@@ -20,14 +20,14 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "lwip/init.h"
-#include "lwip/sockets.h"
+#include "bsd_socket.h"
 
 #include "wolfssl/wolfcrypt/settings.h"
 #include "wolfssl/ssl.h"
@@ -43,7 +43,10 @@
 #include <wolfssl/certs_test.h>
 
 #define TCP_PORT 11111
-#define WIFI_TASK_PRIORITY (tskIDLE_PRIORITY + 2UL)
+
+#ifndef htons
+#define htons(x) ee16(x)
+#endif
 
 void tlsClient_test(void *arg)
 {
@@ -51,11 +54,11 @@ void tlsClient_test(void *arg)
     int i;
     int ret;
     #define BUFF_SIZE 2048
-    static char buffer[BUFF_SIZE];
+    char buffer[BUFF_SIZE];
     char msg[] = "Hello Server";
 
-    int sock;
-    struct sockaddr_in servAddr;
+    int sock = -1;
+    struct wolfIP_sockaddr_in servAddr;
 
     WOLFSSL_CTX *ctx    = NULL;
     WOLFSSL     *ssl    = NULL;
@@ -66,14 +69,14 @@ void tlsClient_test(void *arg)
     if (wolf_wifiConnect(WIFI_SSID, WIFI_PASSWORD, 
                         CYW43_AUTH_WPA2_AES_PSK, 5000)) {
         printf("failed to connect.\n");
-        return;
+        goto exit;
     }
     else {
         printf("Wifi connected.\n");
     }
 
-    lwip_init();
-    tcp_initThread();
+    if (tcp_initThread() != 0)
+        goto exit;
 
     /* Initialize wolfSSL */
     wolfSSL_Init();
@@ -83,12 +86,12 @@ void tlsClient_test(void *arg)
 
     if(time_init() < 0) {
         printf("ERROR:time_init()\n");
-        return;
+        goto exit;
     }
 
     if ((ctx = wolfSSL_CTX_new((wolfTLSv1_2_client_method()))) == NULL) {
         printf("ERROR:wolfSSL_CTX_new()\n");
-        return;
+        goto exit;
     }
 
     printf("wolfSSL_CTX_new\n");
@@ -109,8 +112,8 @@ void tlsClient_test(void *arg)
 
         sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0) {
-            printf("ERROR:wolf_TCPsocke()\n");
-            return;
+            printf("ERROR:socket()\n");
+            goto exit;
         }
 
         printf("Retured from socket\n");
@@ -120,13 +123,10 @@ void tlsClient_test(void *arg)
         servAddr.sin_port = htons(TCP_PORT); /* on DEFAULT_PORT */
 
         printf("Connecting to the server(%s)\n", TEST_TCP_SERVER_IP);
-        if (inet_pton(AF_INET, TEST_TCP_SERVER_IP, &servAddr.sin_addr) != 1) {
-            fprintf(stderr, "ERROR: invalid address\n");
-            goto exit;
-        }
+        servAddr.sin_addr.s_addr = ee32(atoip4(TEST_TCP_SERVER_IP));
 
-        if ((ret = connect(sock, (struct sockaddr *)&servAddr, 
-                                sizeof(servAddr))) != EXIT_SUCCESS) {
+        if ((ret = connect(sock, (struct wolfIP_sockaddr *)&servAddr,
+                                sizeof(servAddr))) != 0) {
             printf("ERROR:connect(%d)\n", ret);
             goto exit;
         }
@@ -139,10 +139,7 @@ void tlsClient_test(void *arg)
             goto exit;
         }
 
-        if ((ret = wolfSSL_set_fd(ssl, sock)) != WOLFSSL_SUCCESS) {
-            fprintf(stderr, "ERROR: Failed to set the file descriptor\n");
-            goto exit;
-        }
+        wolfSSL_set_fd(ssl, sock);
 
         printf("TLS Connecting\n");
         if ((ret = wolfSSL_connect(ssl)) != WOLFSSL_SUCCESS) {
@@ -167,7 +164,9 @@ void tlsClient_test(void *arg)
         printf("Message: %s\n", buffer);
 
         wolfSSL_free(ssl);
+        ssl = NULL;
         close(sock);
+        sock = -1;
     }
     printf("End of TLS Client\n");
 
@@ -179,9 +178,8 @@ exit:
     if (ctx)
         wolfSSL_CTX_free(ctx);
     wolfSSL_Cleanup();
-
-    while(1)
-        vTaskDelay(1000);
+    cyw43_arch_deinit();
+    printf("Wifi disconnected\n");
 }
 
 void main(void)

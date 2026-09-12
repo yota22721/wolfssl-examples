@@ -26,8 +26,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "lwip/init.h"
-#include "lwip/sockets.h"
+#include "bsd_socket.h"
 
 #include "wolf/wifi.h"
 #include "wolf/blink.h"
@@ -35,14 +34,23 @@
 
 #define DEFAULT_PORT 11111
 
+#ifndef INADDR_ANY
+#define INADDR_ANY 0
+#endif
+
+#ifndef htons
+#define htons(x) ee16(x)
+#endif
+
+
 void tcpServer_test(void *arg)
 {
     (void)arg;
     int ret;
-    int sockfd;
-    int connd;
-    struct sockaddr_in servAddr;
-    struct sockaddr_in clientAddr;
+    int sockfd = -1;
+    int connd = -1;
+    struct wolfIP_sockaddr_in servAddr;
+    struct wolfIP_sockaddr_in clientAddr;
     socklen_t size = sizeof(clientAddr);
     char buff[256];
     size_t len;
@@ -54,14 +62,14 @@ void tcpServer_test(void *arg)
     printf("Connecting to Wi-Fi...\n");
     if (wolf_wifiConnect(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 5000)) {
         printf("failed to connect.\n");
-        return;
+        goto end;
     }
     else {
         printf("Wifi connected.\n");
     }
 
-    lwip_init();
-    tcp_initThread();
+    if (tcp_initThread() != 0)
+        goto end;
 
     /* Create a socket that uses an internet IPv4 address,
      * Sets the socket to be stream based (TCP),
@@ -82,7 +90,7 @@ void tcpServer_test(void *arg)
     servAddr.sin_addr.s_addr = INADDR_ANY;   /* from anywhere   */
     printf("binding\n");
     /* Bind the server socket to our port */
-    if (bind(sockfd, (struct sockaddr *)&servAddr, sizeof(servAddr)) < 0)
+    if (bind(sockfd, (struct wolfIP_sockaddr *)&servAddr, sizeof(servAddr)) < 0)
     {
         fprintf(stderr, "ERROR: failed to bind\n");
         ret = -1;
@@ -103,7 +111,7 @@ void tcpServer_test(void *arg)
         printf("Waiting for a connection...\n");
 
         /* Accept client connections */
-        if ((connd = accept(sockfd, (struct sockaddr *)&clientAddr, &size)) < 0)
+        if ((connd = accept(sockfd, (struct wolfIP_sockaddr *)&clientAddr, &size)) < 0)
         {
             fprintf(stderr, "ERROR: failed to accept the connection\n\n");
             ret = -1;
@@ -114,7 +122,7 @@ void tcpServer_test(void *arg)
 
         /* Read the client data into our buff array */
         memset(buff, 0, sizeof(buff));
-        if ((ret = read(connd, buff, sizeof(buff) - 1)) < 0)
+        if ((ret = recv(connd, buff, sizeof(buff) - 1, 0)) < 0)
         {
             fprintf(stderr, "ERROR: failed to read\n");
             goto clientsocket_cleanup;
@@ -136,24 +144,29 @@ void tcpServer_test(void *arg)
         len = strnlen(buff, sizeof(buff));
 
         /* Reply back to the client */
-        if ((ret = write(connd, buff, len)) != len)
+        if ((ret = send(connd, buff, len, 0)) != len)
         {
             fprintf(stderr, "ERROR: failed to write\n");
             goto clientsocket_cleanup;
         }
 
         /* Cleanup after this connection */
+        vTaskDelay(pdMS_TO_TICKS(100));
         close(connd); /* Close the connection to the client   */
+        connd = -1;
     }
 
     printf("Shutdown complete\n");
 
     /* Cleanup and return */
 clientsocket_cleanup:
-    close(connd); /* Close the connection to the client   */
+    if (connd >= 0)
+        close(connd); /* Close the connection to the client   */
 servsocket_cleanup:
-    close(sockfd); /* Close the socket listening for clients     */
+    if (sockfd >= 0)
+        close(sockfd); /* Close the socket listening for clients     */
 end:
+    cyw43_arch_deinit();
     return; /* Return reporting a success               */
 
 }

@@ -19,62 +19,90 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335, USA
  */
 
-#include "lwip/init.h"
-#include "lwip/tcpip.h"
-#include "lwip/netif.h"
-#include "lwip/ip_addr.h"
-#include "lwip/ip4_addr.h"
+#include <stdio.h>
+#include "pico/cyw43_arch.h"
+#include "arch_freertos.h"
 
-#include "lwip/init.h"
-#include "lwip/sockets.h"
+#include "wolfip.h"
+#include "bsd_socket.h"
 
-#include "FreeRTOS.h"
-#include "task.h"
+#include "wolf/tcp.h"
 
-static int tcpip_initialized = 0;
+static struct wolfIP *ipstack = NULL;
 
-static void my_tcpip_init_done(void *arg)
+struct wolfIP* tcp_get_ipstack(void)
 {
-    tcpip_initialized = 1;
-    printf("\ntcpip_thread initialized!\n");
+    return ipstack;
 }
 
-void print_netinfo(void)
+static int pico_nic_send(struct wolfIP_ll_dev *ll, void *buf, uint32_t len)
 {
-    struct netif *netif = netif_list;
-    if (netif != NULL) {
-        ip4_addr_t ip      = netif->ip_addr;
-        ip4_addr_t netmask = netif->netmask;
-        ip4_addr_t gw      = netif->gw;
+    int ret;
 
-        printf("IP Addr: %s\n", ip4addr_ntoa(&ip));
-        printf("Netmask: %s\n", ip4addr_ntoa(&netmask));
-        printf("Gateway: %s\n", ip4addr_ntoa(&gw));
+    (void)ll;
+
+    if (buf == NULL || len == 0U)
+        return -1;
+
+    ret = cyw43_send_ethernet(&cyw43_state, CYW43_ITF_STA, len,
+                              (const void *)buf, false);
+    if (ret != 0)
+        return ret;
+
+    return (int)len;
+}
+static void print_netinfo(void)
+{
+    if (ipstack != NULL) {
+        ip4 ip, mask, gw;
+        char buf[16];
+        wolfIP_ipconfig_get(ipstack, &ip, &mask, &gw);
+        iptoa(ip, buf);
+        printf("IP Addr: %s\n", buf);
+        iptoa(mask, buf);
+        printf("Netmask: %s\n", buf);
+        iptoa(gw, buf);
+        printf("Gateway: %s\n", buf);
     }
     else {
         printf("Network interface not found.\n");
     }
 }
 
-void tcp_initThread(void)
+int tcp_initThread(void)
 {
-    static struct netif netif;
-    static ip4_addr_t ipaddr, netmask, gw;
+    int ret;
 
-    tcpip_init(my_tcpip_init_done, NULL);
-
-    while (tcpip_initialized == 0) {
-        printf(".");
-        vTaskDelay(1000); /* need to wait for initializing TCPIP */
+    wolfIP_init_static(&ipstack);
+    if (ipstack == NULL) {
+        fprintf(stderr, "ERROR: failed to initialize wolfIP\n");
+        return -1;
     }
 
-    IP4_ADDR(&ipaddr, 192, 168, 10, 79);
-    IP4_ADDR(&netmask, 255, 255, 255, 0);
-    IP4_ADDR(&gw, 192, 168, 10, 1);
-    
-    netif_add(&netif, &ipaddr, &netmask, &gw, NULL, NULL, tcpip_input);
-    netif_set_default(&netif);
-    netif_set_up(&netif);
+    struct wolfIP_ll_dev *dev = wolfIP_getdev(ipstack);
+    if (dev == NULL) {
+        fprintf(stderr, "ERROR: failed to get wolfIP network device\n");
+        return -1;
+    }
+    dev->send = pico_nic_send;
+    ret = cyw43_wifi_get_mac(&cyw43_state, CYW43_ITF_STA, dev->mac);
+    if (ret != 0) {
+        fprintf(stderr, "ERROR: failed to read CYW43 MAC address (%d)\n", ret);
+        return ret;
+    }
+
+    ip4 ip   = atoip4("192.168.10.79");
+    ip4 mask = atoip4("255.255.255.0");
+    ip4 gw   = atoip4("192.168.10.1");
+    wolfIP_ipconfig_set(ipstack, ip, mask, gw);
+
+    ret = wolfip_freertos_socket_init(ipstack, CYW43_TASK_PRIORITY, 1024);
+    if (ret != 0) {
+        fprintf(stderr, "ERROR: failed to initialize wolfIP sockets (%d)\n", ret);
+        return ret;
+    }
 
     print_netinfo();
+    printf("wolfIP initialized\n");
+    return 0;
 }
