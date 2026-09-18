@@ -7,6 +7,7 @@ set(WOLFSSH_SRC
     "${WOLFSSH_ROOT}/src/io.c"
     "${WOLFSSH_ROOT}/src/port.c"
     "${WOLFSSH_ROOT}/src/ossh.c"
+    "${WOLFSSH_ROOT}/src/wolfsftp.c"
 )
 
 add_library(wolfssh STATIC ${WOLFSSH_SRC})
@@ -25,4 +26,4 @@ target_compile_definitions(wolfssh PUBLIC
     WOLFSSH_PICO_BUILD
 )
 
-target_link_libraries(wolfssh PUBLIC wolfssl)
+target_link_libraries(wolfssh PUBLIC wolfssl fatfs)

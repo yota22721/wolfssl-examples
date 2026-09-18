@@ -67,6 +67,7 @@ endif()
         include(wolfip_import.cmake)
     endif()
     if (USE_WOLFSSH)
+        include(fatfs_import.cmake)
         include(wolfssh_import.cmake)
     endif()
 

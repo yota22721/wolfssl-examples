@@ -52,6 +52,7 @@
 #include "wolf/wifi.h"
 #include "wolf/tcp.h"
 #include "wolf/ssh.h"
+#include "wolf/ramdisk.h"
 #endif
 
 #if defined(WOLFSSL_PTHREADS) && defined(WOLFSSL_TEST_GLOBAL_REQ)
@@ -2914,7 +2915,12 @@ char* myoptarg = NULL;
 static void sshServer_task(void* arg)
 {
     func_args args;
-    char* argv[] = {"ssh_EchoServer", "-f", "-E"};
+    FATFS fs;
+    BYTE work[RAMDISK_SECTOR_SIZE];
+    MKFS_PARM format = {FM_FAT | FM_SFD, 1, 1, 32, 512};
+    FRESULT result;
+    int diskCreated = 0;
+    char* argv[] = {"ssh_EchoServer", "-f", "-E", "-d", "/"};
     (void)arg;
 
     if (cyw43_arch_init() != 0) {
@@ -2932,6 +2938,22 @@ static void sshServer_task(void* arg)
     if (tcp_initThread() != 0)
         goto end;
 
+    if (ramdisk_create() != 0) {
+        printf("ERROR: RAM disk allocation failed\n");
+        goto end;
+    }
+    diskCreated = 1;
+    result = f_mkfs("0:", &format, work, sizeof(work));
+    if (result == FR_OK)
+        result = f_mount(&fs, "0:", 1);
+    if (result != FR_OK) {
+        printf("ERROR: FatFs initialization failed (%d)\n", result);
+        goto end;
+    }
+    printf("FatFs mounted, RAM disk = %u bytes, free heap = %u\n",
+            RAMDISK_SECTOR_SIZE * RAMDISK_SECTOR_COUNT,
+            (unsigned int)xPortGetFreeHeapSize());
+
     printf("\nStarting sshServer_test\n");
     WMEMSET(&args, 0, sizeof(args));
     args.argc = sizeof(argv) / sizeof(argv[0]);
@@ -2940,6 +2962,10 @@ static void sshServer_task(void* arg)
     printf("End of SSH Server, return code = %d\n", args.return_code);
 
 end:
+    if (diskCreated) {
+        f_mount(NULL, "0:", 0);
+        ramdisk_destroy();
+    }
     cyw43_arch_deinit();
     printf("Wifi disconnected\n");
     vTaskDelete(NULL);

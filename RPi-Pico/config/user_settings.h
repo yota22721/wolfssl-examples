@@ -47,6 +47,10 @@ extern "C"
 #define WOLFSSL_WOLFSSH
 #define WOLFSSH_USER_IO
 #define WOLFSSH_SMALL_STACK
+#define WOLFSSH_SFTP
+#define WOLFSSH_FATFS
+#define WOLFSSH_FATFS_MAX_FILES 4
+#define PRINTF printf
 #define WOLFSSH_NO_RSA
 #define WOLFSSH_NO_ED25519
 #define WOLFSSH_NO_MLDSA
