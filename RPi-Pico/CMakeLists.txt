@@ -23,6 +23,9 @@ pico_sdk_init()
 
 option(USE_UART "Output over UART instead of USB" OFF)
 option(USE_WIFI "Enable WiFi" OFF)
+option(USE_WOLFSSH "Build the wolfSSH echo server" OFF)
+set(WOLFSSH_TASK_STACK_WORDS "8192" CACHE STRING
+    "FreeRTOS stack depth in words for the wolfSSH echoserver task")
 set(WIFI_SSID "" CACHE STRING "The WiFi SSID to connect to")
 set(WIFI_PASSWORD "" CACHE STRING "The WiFi password")
 set(TEST_TCP_SERVER_IP "" CACHE STRING "The TCP test server IP")
@@ -34,6 +37,14 @@ endif()
 
 if (USE_WIFI AND NOT DEFINED ENV{FREERTOS_KERNEL_PATH})
     message(FATAL_ERROR "FREERTOS_KERNEL_PATH environment variable must be set when USE_WIFI is enabled")
+endif()
+
+if (USE_WOLFSSH AND NOT USE_WIFI)
+    message(FATAL_ERROR "USE_WOLFSSH requires USE_WIFI")
+endif()
+
+if (USE_WOLFSSH AND NOT DEFINED ENV{WOLFSSH_ROOT})
+    message(FATAL_ERROR "WOLFSSH_ROOT environment variable must be set when USE_WOLFSSH is enabled")
 endif()
 
 ### Global Include Path
@@ -55,6 +66,9 @@ endif()
     if (USE_WIFI)
         include(wolfip_import.cmake)
     endif()
+    if (USE_WOLFSSH)
+        include(wolfssh_import.cmake)
+    endif()
 
     add_subdirectory(testwolfcrypt)
     add_subdirectory(benchmark)
@@ -64,4 +78,7 @@ endif()
         add_subdirectory(tcp_server)
         add_subdirectory(tls_client)
         add_subdirectory(tls_server)
+        if (USE_WOLFSSH)
+            add_subdirectory(echoserver)
+        endif()
     endif()

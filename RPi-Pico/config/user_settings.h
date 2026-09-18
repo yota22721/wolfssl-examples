@@ -41,6 +41,20 @@ extern "C"
 //#define WOLFSSL_LWIP
 #define WOLFSSL_WOLFIP
 
+#ifdef WOLFSSH_PICO_BUILD
+/* wolfSSH uses callbacks implemented with the wolfIP BSD socket layer. */
+#define FREERTOS
+#define WOLFSSL_WOLFSSH
+#define WOLFSSH_USER_IO
+#define WOLFSSH_SMALL_STACK
+#define WOLFSSH_NO_RSA
+#define WOLFSSH_NO_ED25519
+#define WOLFSSH_NO_MLDSA
+#define WOLFSSH_NO_EXIT
+#define DEFAULT_WINDOW_SZ (16 * 1024)
+#define DEFAULT_MAX_PACKET_SZ 4096
+#endif
+
 extern time_t myTime(time_t *);
 #define XTIME(t) myTime(t)
 
@@ -368,6 +382,15 @@ extern time_t myTime(time_t *);
 /* ------------------------------------------------------------------------- */
 
 /* Override Memory API's */
+#ifdef WOLFSSH_PICO_BUILD
+#include "FreeRTOS.h"
+#define XMALLOC_OVERRIDE
+#define XMALLOC(n, h, t) ((void)(h), (void)(t), pvPortMalloc(n))
+#define XFREE(p, h, t) ((void)(h), (void)(t), vPortFree(p))
+#define XREALLOC(p, n, h, t) \
+    ((void)(p), (void)(n), (void)(h), (void)(t), (void*)NULL)
+#endif
+
 #if 0
 #define XMALLOC_OVERRIDE
 
@@ -554,4 +577,3 @@ unsigned long get_rand_32(void);
 #endif
 
 #endif /* WOLFSSL_USER_SETTINGS_H */
-

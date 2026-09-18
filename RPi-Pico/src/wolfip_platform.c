@@ -1,9 +1,10 @@
 #include "pico/rand.h"
 #include "wolfip.h"
 #include "cyw43.h"
-#include "cyw43_stats.h"
 
 #include "wolf/tcp.h"
+
+static volatile uint8_t cyw43_link_up[2];
 
 struct pbuf;
 uint16_t pbuf_copy_partial(const struct pbuf *p, void *dataptr, uint16_t len, uint16_t offset)
@@ -29,33 +30,46 @@ void cyw43_cb_process_ethernet(void *cb_data, int itf, size_t len,
 void cyw43_cb_tcpip_init(cyw43_t *self, int itf)
 {
     (void)self;
-    (void)itf;
+    if (itf >= 0 && itf < (int)(sizeof(cyw43_link_up) /
+            sizeof(cyw43_link_up[0]))) {
+        cyw43_link_up[itf] = 0;
+    }
 }
 
 void cyw43_cb_tcpip_deinit(cyw43_t *self, int itf)
 {
     (void)self;
-    (void)itf;
+    if (itf >= 0 && itf < (int)(sizeof(cyw43_link_up) /
+            sizeof(cyw43_link_up[0]))) {
+        cyw43_link_up[itf] = 0;
+    }
 }
 
 void cyw43_cb_tcpip_set_link_up(cyw43_t *self, int itf)
 {
     (void)self;
-    (void)itf;
+    if (itf >= 0 && itf < (int)(sizeof(cyw43_link_up) /
+            sizeof(cyw43_link_up[0]))) {
+        cyw43_link_up[itf] = 1;
+    }
 }
 
 void cyw43_cb_tcpip_set_link_down(cyw43_t *self, int itf)
 {
     (void)self;
-    (void)itf;
+    if (itf >= 0 && itf < (int)(sizeof(cyw43_link_up) /
+            sizeof(cyw43_link_up[0]))) {
+        cyw43_link_up[itf] = 0;
+    }
 }
 
 int cyw43_tcpip_link_status(cyw43_t *self, int itf)
 {
-    int s = cyw43_wifi_link_status(self, itf);
-    if (s == CYW43_LINK_JOIN)
+    if (itf >= 0 && itf < (int)(sizeof(cyw43_link_up) /
+            sizeof(cyw43_link_up[0])) && cyw43_link_up[itf]) {
         return CYW43_LINK_UP;
-    return s;
+    }
+    return cyw43_wifi_link_status(self, itf);
 }
 uint32_t wolfIP_getrandom(void)
 {

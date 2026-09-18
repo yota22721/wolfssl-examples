@@ -52,12 +52,23 @@ If you want to use TCP/TLS server or client, you also need to have the [Raspberr
 export FREERTOS_KERNEL_PATH=/path/to/FreeRTOS-Kernel
 ```
 
+### wolfSSH echoserver prerequisites
+
+To build the SSH echoserver, clone wolfSSH and select a branch containing the
+Pico port changes, then set `WOLFSSH_ROOT`:
+
+```
+export WOLFSSH_ROOT=/path/to/wolfssh
+git -C "$WOLFSSH_ROOT" switch pico-wolfip
+```
+
 ### 5. cmake and make
 
 The following CMAKE options are available:
 
 * `PICO_BOARD` - Set this to `pico` for a Pi Pico, `pico_w` for a Pi Pico W, `pico2` for a Pi Pico 2, or `pico2_w` for a Pi Pico 2 W. A full list of boards for this option can be found [here](https://github.com/raspberrypi/pico-sdk/tree/master/src/boards/include/boards), just ignore the `.h` at the end.
 * `USE_WIFI` - Build the tests that use WiFi, only works when `PICO_BOARD` defined has a CYW43 WiFi chip.
+* `USE_WOLFSSH` - Build wolfSSH's example echoserver with FreeRTOS and wolfIP. Requires `USE_WIFI=ON` and `WOLFSSH_ROOT`.
 * `USE_UART` - Output to UART instead of USB, for the Pi Debug Probe.
 * `WIFI_SSID` - The SSID to connect to (if `USE_WIFI` is set).
 * `WIFI_PASSWORD` - The password used for the WiFi network (if `USE_WIFI` is set).
@@ -69,6 +80,26 @@ $ cd RPi-Pico
 $ mkdir build && cd build
 $ cmake -DPICO_BOARD=pico_w ..
 $ make
+```
+
+To build only the wolfSSH echoserver for Pico 2 W:
+
+```
+$ cmake -S . -B build \
+    -DPICO_BOARD=pico2_w \
+    -DUSE_WIFI=ON \
+    -DUSE_WOLFSSH=ON \
+    -DWIFI_SSID='your-ssid' \
+    -DWIFI_PASSWORD='your-password'
+$ cmake --build build --target ssh_EchoServer -j4
+```
+
+After flashing `build/echoserver/ssh_EchoServer.uf2`, read the Pico's IP address
+from its serial output and connect to port 22222. The upstream wolfSSH example
+credentials are `jill` / `upthehill`:
+
+```
+$ ssh -p 22222 jill@PICO_IP_ADDRESS
 ```
 
 The build produces the following UF2 images:
@@ -86,6 +117,8 @@ The build produces the following UF2 images:
 - tcp_Server.uf2
 
 - tls_Server.uf2
+
+- ssh_EchoServer.uf2 (when `USE_WOLFSSH=ON`)
 
 ### 6. Upload to the Pico
 
