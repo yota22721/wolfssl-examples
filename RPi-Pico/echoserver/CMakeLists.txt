@@ -28,6 +28,13 @@ target_link_libraries(ssh_EchoServer
     wolfip
 )
 
+if (WOLFSSH_FATFS_STORAGE STREQUAL "FLASH")
+    target_link_options(ssh_EchoServer PRIVATE
+        "LINKER:--defsym=__wolfssh_flash_disk_size=${WOLFSSH_FLASH_DISK_SIZE}"
+        "LINKER:--script=${CMAKE_CURRENT_LIST_DIR}/../config/flashdisk.ld"
+    )
+endif()
+
 if (USE_UART)
     pico_enable_stdio_usb(ssh_EchoServer 0)
     pico_enable_stdio_uart(ssh_EchoServer 1)

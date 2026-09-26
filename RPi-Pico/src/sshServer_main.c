@@ -41,6 +41,9 @@
 #include <wolfssh/internal.h>
 #include <wolfssh/wolfsftp.h>
 #include <wolfssh/agent.h>
+
+#include "wolfssh_pico_port.h"
+
 #include <wolfssh/test.h>
 #include <wolfssl/wolfcrypt/ecc.h>
 
@@ -52,7 +55,21 @@
 #include "wolf/wifi.h"
 #include "wolf/tcp.h"
 #include "wolf/ssh.h"
-#include "wolf/ramdisk.h"
+#ifdef WOLFSSH_FLASH_DISK
+    #include "wolf/flashdisk.h"
+    #define STORAGE_SECTOR_SIZE FLASHDISK_SECTOR_SIZE
+    #define STORAGE_SECTOR_COUNT FLASHDISK_SECTOR_COUNT
+    #define storage_create flashdisk_create
+    #define storage_destroy flashdisk_destroy
+    #define STORAGE_NAME "flash"
+#else
+    #include "wolf/ramdisk.h"
+    #define STORAGE_SECTOR_SIZE RAMDISK_SECTOR_SIZE
+    #define STORAGE_SECTOR_COUNT RAMDISK_SECTOR_COUNT
+    #define storage_create ramdisk_create
+    #define storage_destroy ramdisk_destroy
+    #define STORAGE_NAME "RAM"
+#endif
 #endif
 
 #if defined(WOLFSSL_PTHREADS) && defined(WOLFSSL_TEST_GLOBAL_REQ)
@@ -2916,8 +2933,10 @@ static void sshServer_task(void* arg)
 {
     func_args args;
     FATFS fs;
-    BYTE work[RAMDISK_SECTOR_SIZE];
-    MKFS_PARM format = {FM_FAT | FM_SFD, 1, 1, 32, 512};
+    BYTE work[STORAGE_SECTOR_SIZE];
+    MKFS_PARM format = {
+        FM_FAT | FM_SFD, 1, 1, 32, STORAGE_SECTOR_SIZE
+    };
     FRESULT result;
     int diskCreated = 0;
     char* argv[] = {"ssh_EchoServer", "-f", "-E", "-d", "/"};
@@ -2938,20 +2957,23 @@ static void sshServer_task(void* arg)
     if (tcp_initThread() != 0)
         goto end;
 
-    if (ramdisk_create() != 0) {
-        printf("ERROR: RAM disk allocation failed\n");
+    if (storage_create() != 0) {
+        printf("ERROR: %s disk initialization failed\n", STORAGE_NAME);
         goto end;
     }
     diskCreated = 1;
-    result = f_mkfs("0:", &format, work, sizeof(work));
-    if (result == FR_OK)
-        result = f_mount(&fs, "0:", 1);
+    result = f_mount(&fs, "0:", 1);
+    if (result == FR_NO_FILESYSTEM) {
+        result = f_mkfs("0:", &format, work, sizeof(work));
+        if (result == FR_OK)
+            result = f_mount(&fs, "0:", 1);
+    }
     if (result != FR_OK) {
         printf("ERROR: FatFs initialization failed (%d)\n", result);
         goto end;
     }
-    printf("FatFs mounted, RAM disk = %u bytes, free heap = %u\n",
-            RAMDISK_SECTOR_SIZE * RAMDISK_SECTOR_COUNT,
+    printf("FatFs mounted, %s disk = %u bytes, free heap = %u\n",
+            STORAGE_NAME, STORAGE_SECTOR_SIZE * STORAGE_SECTOR_COUNT,
             (unsigned int)xPortGetFreeHeapSize());
 
     printf("\nStarting sshServer_test\n");
@@ -2964,7 +2986,7 @@ static void sshServer_task(void* arg)
 end:
     if (diskCreated) {
         f_mount(NULL, "0:", 0);
-        ramdisk_destroy();
+        storage_destroy();
     }
     cyw43_arch_deinit();
     printf("Wifi disconnected\n");

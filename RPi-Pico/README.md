@@ -69,6 +69,11 @@ The following CMAKE options are available:
 * `PICO_BOARD` - Set this to `pico` for a Pi Pico, `pico_w` for a Pi Pico W, `pico2` for a Pi Pico 2, or `pico2_w` for a Pi Pico 2 W. A full list of boards for this option can be found [here](https://github.com/raspberrypi/pico-sdk/tree/master/src/boards/include/boards), just ignore the `.h` at the end.
 * `USE_WIFI` - Build the tests that use WiFi, only works when `PICO_BOARD` defined has a CYW43 WiFi chip.
 * `USE_WOLFSSH` - Build wolfSSH's example echoserver with FreeRTOS and wolfIP. Requires `USE_WIFI=ON` and `WOLFSSH_ROOT`.
+* `WOLFSSH_FATFS_STORAGE` - Select `RAM` (the default) or `FLASH` as the
+  wolfSSH SFTP filesystem backing store.
+* `WOLFSSH_FLASH_DISK_SIZE` - Bytes reserved at the end of onboard flash when
+  `WOLFSSH_FATFS_STORAGE=FLASH`. The default is 65536 and the value must be a
+  multiple of 4096.
 * `USE_UART` - Output to UART instead of USB, for the Pi Debug Probe.
 * `WIFI_SSID` - The SSID to connect to (if `USE_WIFI` is set).
 * `WIFI_PASSWORD` - The password used for the WiFi network (if `USE_WIFI` is set).
@@ -89,10 +94,18 @@ $ cmake -S . -B build \
     -DPICO_BOARD=pico2_w \
     -DUSE_WIFI=ON \
     -DUSE_WOLFSSH=ON \
+    -DWOLFSSH_FATFS_STORAGE=FLASH \
     -DWIFI_SSID='your-ssid' \
     -DWIFI_PASSWORD='your-password'
 $ cmake --build build --target ssh_EchoServer -j4
 ```
+
+The flash-backed filesystem survives resets and firmware updates that do not
+overwrite its reserved region. The build fails if the firmware image grows into
+that region. This simple backend does not provide wear leveling, so it is
+intended for the example's low-write SFTP use rather than write-heavy storage.
+Pico 2 W is recommended for this configuration; the complete wolfSSH image plus
+the reserved filesystem is unlikely to fit in a Pico W's 2 MiB flash.
 
 After flashing `build/echoserver/ssh_EchoServer.uf2`, read the Pico's IP address
 from its serial output and connect to port 22222. The upstream wolfSSH example

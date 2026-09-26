@@ -7,6 +7,41 @@ endforeach()
 configure_file(config/ffconf.h ${FATFS_BUILD_DIR}/ffconf.h COPYONLY)
 
 target_compile_definitions(FreeRTOS-Kernel INTERFACE "configTOTAL_HEAP_SIZE=(256*1024)")
-add_library(fatfs STATIC ${FATFS_BUILD_DIR}/ff.c src/ramdisk.c)
+set(WOLFSSH_FATFS_STORAGE "RAM" CACHE STRING
+    "FatFs backing store for the wolfSSH echoserver (RAM or FLASH)")
+set_property(CACHE WOLFSSH_FATFS_STORAGE PROPERTY STRINGS RAM FLASH)
+string(TOUPPER "${WOLFSSH_FATFS_STORAGE}" WOLFSSH_FATFS_STORAGE)
+
+if (WOLFSSH_FATFS_STORAGE STREQUAL "RAM")
+    set(FATFS_DISK_SOURCE src/ramdisk.c)
+elseif (WOLFSSH_FATFS_STORAGE STREQUAL "FLASH")
+    if (PICO_PLATFORM STREQUAL "rp2040")
+        message(WARNING
+            "FLASH storage is unlikely to fit with wolfSSH on a 2 MiB "
+            "Pico W; Pico 2 W is recommended")
+    endif()
+    set(WOLFSSH_FLASH_DISK_SIZE "65536" CACHE STRING
+        "Bytes reserved at the end of flash for the wolfSSH FatFs disk")
+    math(EXPR WOLFSSH_FLASH_DISK_REMAINDER
+        "${WOLFSSH_FLASH_DISK_SIZE} % 4096")
+    if (WOLFSSH_FLASH_DISK_SIZE LESS_EQUAL 0 OR
+            NOT WOLFSSH_FLASH_DISK_REMAINDER EQUAL 0)
+        message(FATAL_ERROR
+            "WOLFSSH_FLASH_DISK_SIZE must be a positive multiple of 4096")
+    endif()
+    set(FATFS_DISK_SOURCE src/flashdisk.c)
+else()
+    message(FATAL_ERROR "WOLFSSH_FATFS_STORAGE must be RAM or FLASH")
+endif()
+
+add_library(fatfs STATIC ${FATFS_BUILD_DIR}/ff.c ${FATFS_DISK_SOURCE})
 target_include_directories(fatfs PUBLIC ${FATFS_BUILD_DIR})
 target_link_libraries(fatfs PUBLIC FreeRTOS-Kernel-Heap4)
+
+if (WOLFSSH_FATFS_STORAGE STREQUAL "FLASH")
+    target_compile_definitions(fatfs PUBLIC
+        WOLFSSH_FLASH_DISK
+        WOLFSSH_FLASH_DISK_SIZE=${WOLFSSH_FLASH_DISK_SIZE}
+    )
+    target_link_libraries(fatfs PUBLIC pico_flash hardware_flash)
+endif()
