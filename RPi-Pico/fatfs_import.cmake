@@ -15,20 +15,7 @@ string(TOUPPER "${WOLFSSH_FATFS_STORAGE}" WOLFSSH_FATFS_STORAGE)
 if (WOLFSSH_FATFS_STORAGE STREQUAL "RAM")
     set(FATFS_DISK_SOURCE src/ramdisk.c)
 elseif (WOLFSSH_FATFS_STORAGE STREQUAL "FLASH")
-    if (PICO_PLATFORM STREQUAL "rp2040")
-        message(WARNING
-            "FLASH storage is unlikely to fit with wolfSSH on a 2 MiB "
-            "Pico W; Pico 2 W is recommended")
-    endif()
-    set(WOLFSSH_FLASH_DISK_SIZE "65536" CACHE STRING
-        "Bytes reserved at the end of flash for the wolfSSH FatFs disk")
-    math(EXPR WOLFSSH_FLASH_DISK_REMAINDER
-        "${WOLFSSH_FLASH_DISK_SIZE} % 4096")
-    if (WOLFSSH_FLASH_DISK_SIZE LESS_EQUAL 0 OR
-            NOT WOLFSSH_FLASH_DISK_REMAINDER EQUAL 0)
-        message(FATAL_ERROR
-            "WOLFSSH_FLASH_DISK_SIZE must be a positive multiple of 4096")
-    endif()
+    math(EXPR WOLFSSH_FLASH_DISK_SIZE "64 * 1024")
     set(FATFS_DISK_SOURCE src/flashdisk.c)
 else()
     message(FATAL_ERROR "WOLFSSH_FATFS_STORAGE must be RAM or FLASH")

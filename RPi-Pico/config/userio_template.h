@@ -1,5 +1,5 @@
-#ifndef WOLFSSH_PICO_PORT_H
-#define WOLFSSH_PICO_PORT_H
+#ifndef WOLFSSH_PICO_USERIO_H
+#define WOLFSSH_PICO_USERIO_H
 
 #include <stdint.h>
 

@@ -14,7 +14,7 @@ add_library(wolfssh STATIC ${WOLFSSH_SRC})
 
 # wolfSSL and wolfSSH must see the same embedded/allocator settings.
 target_compile_definitions(wolfssl PUBLIC WOLFSSH_PICO_BUILD)
-target_link_libraries(wolfssl FreeRTOS-Kernel)
+target_link_libraries(wolfssl FreeRTOS-Kernel-Heap4)
 
 target_include_directories(wolfssh PUBLIC
     ${WOLFSSH_ROOT}

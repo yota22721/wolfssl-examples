@@ -16,7 +16,6 @@ target_compile_definitions(ssh_EchoServer PRIVATE
     WOLFSSL_USER_SETTINGS
     WOLFSSH_PICO_BUILD
     WOLFSSH_PICO
-    WOLFSSH_TASK_STACK_WORDS=${WOLFSSH_TASK_STACK_WORDS}
 )
 
 target_link_libraries(ssh_EchoServer

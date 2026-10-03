@@ -52,17 +52,15 @@ If you want to use TCP/TLS server or client, you also need to have the [Raspberr
 export FREERTOS_KERNEL_PATH=/path/to/FreeRTOS-Kernel
 ```
 
-### wolfSSH echoserver prerequisites
+### 5. Set `WOLFSSH_ROOT`
 
-To build the SSH echoserver, clone wolfSSH and select a branch containing the
-Pico port changes, then set `WOLFSSH_ROOT`:
+To build the SSH echoserver, set the path to the wolfSSH source directory.
 
 ```
 export WOLFSSH_ROOT=/path/to/wolfssh
-git -C "$WOLFSSH_ROOT" switch pico-wolfip
 ```
 
-### 5. cmake and make
+### 6. cmake and make
 
 The following CMAKE options are available:
 
@@ -70,10 +68,8 @@ The following CMAKE options are available:
 * `USE_WIFI` - Build the tests that use WiFi, only works when `PICO_BOARD` defined has a CYW43 WiFi chip.
 * `USE_WOLFSSH` - Build wolfSSH's example echoserver with FreeRTOS and wolfIP. Requires `USE_WIFI=ON` and `WOLFSSH_ROOT`.
 * `WOLFSSH_FATFS_STORAGE` - Select `RAM` (the default) or `FLASH` as the
-  wolfSSH SFTP filesystem backing store.
-* `WOLFSSH_FLASH_DISK_SIZE` - Bytes reserved at the end of onboard flash when
-  `WOLFSSH_FATFS_STORAGE=FLASH`. The default is 65536 and the value must be a
-  multiple of 4096.
+  wolfSSH SFTP filesystem backing store. `FLASH` uses the last 64 KiB of
+  onboard flash and does not provide wear leveling.
 * `USE_UART` - Output to UART instead of USB, for the Pi Debug Probe.
 * `WIFI_SSID` - The SSID to connect to (if `USE_WIFI` is set).
 * `WIFI_PASSWORD` - The password used for the WiFi network (if `USE_WIFI` is set).
@@ -83,37 +79,18 @@ The following CMAKE options are available:
 ```
 $ cd RPi-Pico
 $ mkdir build && cd build
-$ cmake -DPICO_BOARD=pico_w ..
-$ make
-```
-
-To build only the wolfSSH echoserver for Pico 2 W:
-
-```
-$ cmake -S . -B build \
+$ cmake \
     -DPICO_BOARD=pico2_w \
     -DUSE_WIFI=ON \
     -DUSE_WOLFSSH=ON \
     -DWOLFSSH_FATFS_STORAGE=FLASH \
     -DWIFI_SSID='your-ssid' \
-    -DWIFI_PASSWORD='your-password'
-$ cmake --build build --target ssh_EchoServer -j4
+    -DWIFI_PASSWORD='your-password' ..
+$ make
 ```
 
-The flash-backed filesystem survives resets and firmware updates that do not
-overwrite its reserved region. The build fails if the firmware image grows into
-that region. This simple backend does not provide wear leveling, so it is
-intended for the example's low-write SFTP use rather than write-heavy storage.
-Pico 2 W is recommended for this configuration; the complete wolfSSH image plus
-the reserved filesystem is unlikely to fit in a Pico W's 2 MiB flash.
-
-After flashing `build/echoserver/ssh_EchoServer.uf2`, read the Pico's IP address
-from its serial output and connect to port 22222. The upstream wolfSSH example
-credentials are `jill` / `upthehill`:
-
-```
-$ ssh -p 22222 jill@PICO_IP_ADDRESS
-```
+The wolfSSH echoserver listens on port 22222. The example credentials are
+`jill` / `upthehill`.
 
 The build produces the following UF2 images:
 
@@ -131,9 +108,9 @@ The build produces the following UF2 images:
 
 - tls_Server.uf2
 
-- ssh_EchoServer.uf2 (when `USE_WOLFSSH=ON`)
+- ssh_EchoServer.uf2
 
-### 6. Upload to the Pico
+### 7. Upload to the Pico
 
 Hold the boot button and plug the Pico into your computer, you can then
 drag/drop a `.uf2` to the Pico. It will stop becoming a USB mass storage device
@@ -145,7 +122,7 @@ sudo picotool load benchmark.uf2
 sudo picotool reboot
 ```
 
-### 7. Serial output
+### 8. Serial output
 
 If you have not set `USE_UART`, once rebooted the USB port will turn into an
 "Abstract Control Module" serial port. On Linux this will likely be

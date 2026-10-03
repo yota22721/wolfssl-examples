@@ -46,9 +46,6 @@ extern "C"
 #define FREERTOS
 #define WOLFSSL_WOLFSSH
 #define WOLFSSH_USER_IO
-#define SOCKET_T int
-#define NUM_SOCKETS 1
-#define WOLFSSH_TEST_NO_NONBLOCK
 #define WOLFSSH_SMALL_STACK
 #define WOLFSSH_SFTP
 #define WOLFSSH_FATFS

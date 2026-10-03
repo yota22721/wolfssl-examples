@@ -1,6 +1,6 @@
 #include "bsd_socket.h"
 #include <wolfssh/error.h>
-#include "wolf/ssh.h"
+#include "wolf/ssh_io.h"
 
 int wolfSshBsdIORecv(WOLFSSH* ssh, void* buf, word32 sz, void* ctx)
 {

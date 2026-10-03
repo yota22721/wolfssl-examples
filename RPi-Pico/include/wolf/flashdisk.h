@@ -2,7 +2,7 @@
 #define WOLF_FLASHDISK_H
 
 #ifndef WOLFSSH_FLASH_DISK_SIZE
-#define WOLFSSH_FLASH_DISK_SIZE (64U * 1024U)
+#error WOLFSSH_FLASH_DISK_SIZE must be defined by the build
 #endif
 
 #define FLASHDISK_SECTOR_SIZE 512U

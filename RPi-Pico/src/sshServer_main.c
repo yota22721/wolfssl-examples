@@ -42,8 +42,6 @@
 #include <wolfssh/wolfsftp.h>
 #include <wolfssh/agent.h>
 
-#include "wolfssh_pico_port.h"
-
 #include <wolfssh/test.h>
 #include <wolfssl/wolfcrypt/ecc.h>
 
@@ -54,7 +52,7 @@
 #include "task.h"
 #include "wolf/wifi.h"
 #include "wolf/tcp.h"
-#include "wolf/ssh.h"
+#include "wolf/ssh_io.h"
 #ifdef WOLFSSH_FLASH_DISK
     #include "wolf/flashdisk.h"
     #define STORAGE_SECTOR_SIZE FLASHDISK_SECTOR_SIZE
@@ -2462,7 +2460,9 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
                     break;
 
                 case 'N':
+#ifndef WOLFSSH_PICO
                     nonBlock = 1;
+#endif
                     break;
 
                 case 'd':
@@ -2844,8 +2844,10 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
             ES_ERROR("tcp accept failed");
         }
 
+#ifndef WOLFSSH_PICO
         if (nonBlock)
             tcp_set_nonblocking(&clientFd);
+#endif
 
         wolfSSH_set_fd(ssh, (int)clientFd);
 
@@ -2995,14 +2997,16 @@ end:
 
 int main(void)
 {
+#define STACK_SIZE (1024 * 8)
+
     stdio_init_all();
     for (int i = 0; i < 10; i++) {
         printf("Starting in %dSec.\n", 10 - i);
         sleep_ms(1000);
     }
     printf("Creating sshServer task, stack = %u\n",
-            (unsigned int)WOLFSSH_TASK_STACK_WORDS);
-    if (xTaskCreate(sshServer_task, "wolfSSH", WOLFSSH_TASK_STACK_WORDS,
+            (unsigned int)STACK_SIZE);
+    if (xTaskCreate(sshServer_task, "wolfSSH", STACK_SIZE,
             NULL, CYW43_TASK_PRIORITY + 1, NULL) != pdPASS) {
         printf("Failed to create wolfSSH task\n");
         return 1;
